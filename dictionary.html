@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>xo Dictionary</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="auth.js"></script>
+</head>
+<body>
+  <main class="app app-dictionary">
+    <nav class="page-nav">
+      <a class="page-nav-link" href="index.html">Back to Generator</a>
+    </nav>
+
+    <h1>xo Dictionary</h1>
+
+    <section class="dictionary-section" aria-live="polite">
+      <div class="dictionary-toolbar">
+        <div class="dictionary-toolbar-group dictionary-toolbar-group-left">
+          <div id="dictionaryFilters" class="dictionary-filters" role="group" aria-label="Dictionary filters">
+            <button type="button" class="dictionary-filter-btn is-active" data-filter="defined" aria-pressed="true">
+              <span class="dictionary-filter-label">Defined</span>
+              <span class="dictionary-filter-count" data-filter-count="defined">0</span>
+            </button>
+            <button type="button" class="dictionary-filter-btn" data-filter="undefined" aria-pressed="false">
+              <span class="dictionary-filter-label">Undefined</span>
+              <span class="dictionary-filter-count" data-filter-count="undefined">0</span>
+            </button>
+            <button type="button" class="dictionary-filter-btn" data-filter="all" aria-pressed="false">
+              <span class="dictionary-filter-label">All</span>
+              <span class="dictionary-filter-count" data-filter-count="all">0</span>
+            </button>
+          </div>
+          <button
+            id="dictionaryMyHeartsToggle"
+            class="dictionary-toggle-btn"
+            type="button"
+            aria-pressed="false"
+          >
+            My Hearts
+          </button>
+        </div>
+        <div class="dictionary-toolbar-group dictionary-toolbar-group-right">
+          <button
+            id="dictionaryAddWordBtn"
+            class="dictionary-toggle-btn"
+            type="button"
+            aria-expanded="false"
+          >
+            Add Word
+          </button>
+        </div>
+      </div>
+      <section id="dictionaryComposer" class="dictionary-composer is-hidden" aria-label="Add a manual dictionary word"></section>
+      <p id="dictionaryStatus" class="dictionary-status" role="status">Loading dictionary...</p>
+      <ol id="dictionaryList" class="dictionary-list"></ol>
+      <div id="dictionarySentinel" class="dictionary-sentinel" aria-hidden="true"></div>
+    </section>
+  </main>
+
+  <script type="application/x-protected-script" data-protected-src="aws-config.js"></script>
+  <script type="application/x-protected-script" data-protected-src="https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js"></script>
+  <script type="application/x-protected-script" data-protected-src="shared.js"></script>
+  <script type="application/x-protected-script" data-protected-src="rules-config.js"></script>
+  <script type="application/x-protected-script" data-protected-src="dictionary.js"></script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>xo Generator</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="auth.js"></script>
+</head>
+<body>
+  <main class="app">
+    <nav class="page-nav page-nav-split">
+      <div class="page-nav-group">
+        <a class="page-nav-link" href="settings.html">Settings</a>
+      </div>
+      <div class="page-nav-group page-nav-group-right">
+        <a class="page-nav-link" href="dictionary.html">Dictionary</a>
+      </div>
+    </nav>
+
+    <h1>xo Language Word Generator</h1>
+
+    <section class="controls" aria-label="Generation settings">
+      <div class="controls-left">
+        <div class="control-item">
+          <label for="minSyllables">Min syllables</label>
+          <input id="minSyllables" type="number" min="1" max="12" value="1">
+        </div>
+        <div class="control-item">
+          <label for="maxSyllables">Max syllables</label>
+          <input id="maxSyllables" type="number" min="1" max="12" value="3">
+        </div>
+      </div>
+    </section>
+
+    <button id="generateBtn" class="generate-btn" type="button">Generate</button>
+    <p id="generationStatus" class="generation-status is-hidden" role="status" aria-live="polite"></p>
+
+    <section class="results-section" aria-live="polite">
+      <div class="results-header">
+        <h2>Generated Words</h2>
+        <button id="clearAllBtn" class="clear-all-btn" type="button">clear all</button>
+      </div>
+      <ol id="results" class="results-list"></ol>
+    </section>
+  </main>
+
+  <script type="application/x-protected-script" data-protected-src="aws-config.js"></script>
+  <script type="application/x-protected-script" data-protected-src="https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js"></script>
+  <script type="application/x-protected-script" data-protected-src="shared.js"></script>
+  <script type="application/x-protected-script" data-protected-src="rules-config.js"></script>
+  <script type="application/x-protected-script" data-protected-src="script.js"></script>
+</body>
+</html>
