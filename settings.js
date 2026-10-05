@@ -4,6 +4,7 @@
   const sharedApi = globalScope.LOVE_LANGUAGE_SHARED || {};
   const sharedUtils = sharedApi.utils || {};
   const rulesApi = globalScope.LOVE_LANGUAGE_RULES || {};
+  const databaseSettingsApi = globalScope.SECRET_DATABASE_SETTINGS || {};
 
   const trimOrEmpty =
     typeof sharedUtils.trimOrEmpty === "function"
@@ -69,6 +70,18 @@
     typeof rulesApi.restoreDefaultRuleConfig === "function"
       ? rulesApi.restoreDefaultRuleConfig
       : () => createBlankRuleConfig();
+  const saveActiveRuleConfig =
+    typeof rulesApi.saveActiveRuleConfig === "function"
+      ? rulesApi.saveActiveRuleConfig
+      : (config) => config;
+  const loadRulesFromDatabase =
+    typeof databaseSettingsApi.loadRulesFromDatabase === "function"
+      ? databaseSettingsApi.loadRulesFromDatabase
+      : null;
+  const saveRulesToDatabase =
+    typeof databaseSettingsApi.saveRulesToDatabase === "function"
+      ? databaseSettingsApi.saveRulesToDatabase
+      : null;
 
   const storageKeys =
     rulesApi.storageKeys && typeof rulesApi.storageKeys === "object" ? rulesApi.storageKeys : {};
@@ -95,7 +108,6 @@
   const exportRulesBtn = document.getElementById("exportRulesBtn");
   const blankSlateBtn = document.getElementById("blankSlateBtn");
   const restoreDefaultsBtn = document.getElementById("restoreDefaultsBtn");
-  const importRulesInput = document.getElementById("importRulesInput");
   const applyStatus = document.getElementById("settingsApplyStatus");
   const importStatus = document.getElementById("settingsImportStatus");
   const errorList = document.getElementById("settingsErrorList");
@@ -901,8 +913,8 @@
   function renderStatus() {
     if (applyStatus) {
       applyStatus.textContent = draftValidation.isValid
-        ? "Draft applied locally. Future generations will use these rules."
-        : "Draft saved locally but not applied. The generator is still using the last valid rules.";
+        ? "Draft applied in this browser. Export it to update the shared database settings."
+        : "Draft saved in this browser but not applied. The generator is still using the last valid rules.";
       applyStatus.classList.toggle("is-error", !draftValidation.isValid);
       applyStatus.classList.toggle("is-success", draftValidation.isValid);
     }
@@ -1104,63 +1116,75 @@
   }
 
   async function handleImportRules() {
-    if (!importRulesInput) {
+    if (!loadRulesFromDatabase) {
+      importFeedbackIsError = true;
+      importFeedbackMessage = "Database-backed language settings are unavailable.";
+      renderStatus();
       return;
     }
 
-    const file = importRulesInput.files && importRulesInput.files[0];
-    if (!file) {
-      return;
-    }
-
+    importRulesBtn.disabled = true;
     try {
-      const fileText = await file.text();
-      const importedConfig = normalizeRuleConfig(JSON.parse(fileText));
-      const result = applyDraftRuleConfig(importedConfig);
-      draftConfig = cloneRuleConfig(result.draft);
-      activeConfig = cloneRuleConfig(result.active);
-      draftValidation = result.validation;
+      const result = await loadRulesFromDatabase();
+      if (!result.found) {
+        importFeedbackIsError = true;
+        importFeedbackMessage = "No language settings have been exported to the database yet.";
+        renderStatus();
+        return;
+      }
+
+      draftConfig = cloneRuleConfig(loadDraftRuleConfig());
+      activeConfig = cloneRuleConfig(loadActiveRuleConfig());
+      draftValidation = validateRuleConfig(draftConfig);
       resetUiStateFromDraftConfig();
       clearPendingDeleteState();
-      importFeedbackIsError = !result.applied;
-      importFeedbackMessage = result.applied
-        ? `Imported rules from ${file.name}.`
-        : `Imported rules from ${file.name}, but the draft has validation errors and was not applied.`;
+      importFeedbackIsError = false;
+      importFeedbackMessage = "Imported language settings from the database.";
       renderAll();
     } catch (error) {
       importFeedbackIsError = true;
-      importFeedbackMessage = `Could not import rules from ${file.name}.`;
+      importFeedbackMessage = "Could not import language settings from the database.";
       renderStatus();
-      console.error("Failed to import rule config.", error);
+      console.error("Failed to import language settings from DynamoDB.", error);
     } finally {
-      importRulesInput.value = "";
+      importRulesBtn.disabled = false;
     }
   }
 
-  function handleExportRules() {
+  async function handleExportRules() {
+    if (!saveRulesToDatabase) {
+      importFeedbackIsError = true;
+      importFeedbackMessage = "Database-backed language settings are unavailable.";
+      renderStatus();
+      return;
+    }
+
     clearPendingDeleteState();
     saveAllEditingRows({ render: false });
+    exportRulesBtn.disabled = true;
 
-    const configToExport = normalizeRuleConfig(draftConfig);
-    const json = JSON.stringify(configToExport, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = objectUrl;
-    link.download = "secret-generator-rules.json";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(objectUrl);
-
-    importFeedbackIsError = false;
-    importFeedbackMessage = "Exported the current draft rules.";
-    renderAll();
+    try {
+      await saveRulesToDatabase({
+        draft: normalizeRuleConfig(draftConfig),
+        active: normalizeRuleConfig(activeConfig)
+      });
+      importFeedbackIsError = false;
+      importFeedbackMessage = "Exported language settings to the database.";
+      renderAll();
+    } catch (error) {
+      importFeedbackIsError = true;
+      importFeedbackMessage = "Could not export language settings to the database.";
+      renderStatus();
+      console.error("Failed to export language settings to DynamoDB.", error);
+    } finally {
+      exportRulesBtn.disabled = false;
+    }
   }
 
   function handleBlankSlate() {
     clearPendingDeleteState();
     draftConfig = createBlankRuleConfig();
+    activeConfig = cloneRuleConfig(saveActiveRuleConfig(draftConfig));
     persistDraftState();
     resetUiStateFromDraftConfig();
     importFeedbackIsError = false;
@@ -1357,17 +1381,16 @@
     app.addEventListener("focusin", handleFocusIn);
   }
 
-  if (importRulesBtn && importRulesInput) {
+  if (importRulesBtn) {
     importRulesBtn.addEventListener("click", () => {
-      importRulesInput.click();
-    });
-    importRulesInput.addEventListener("change", () => {
       void handleImportRules();
     });
   }
 
   if (exportRulesBtn) {
-    exportRulesBtn.addEventListener("click", handleExportRules);
+    exportRulesBtn.addEventListener("click", () => {
+      void handleExportRules();
+    });
   }
 
   if (blankSlateBtn) {

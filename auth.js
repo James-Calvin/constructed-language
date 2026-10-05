@@ -35,7 +35,17 @@
             new Promise((resolve, reject) => {
               const script = document.createElement("script");
               script.src = placeholder.dataset.protectedSrc;
-              script.onload = resolve;
+              script.onload = async () => {
+                try {
+                  const readyPromiseName = placeholder.dataset.protectedReady;
+                  if (readyPromiseName && globalScope[readyPromiseName]) {
+                    await globalScope[readyPromiseName];
+                  }
+                  resolve();
+                } catch (error) {
+                  reject(error);
+                }
+              };
               script.onerror = () => reject(new Error(`Could not load ${script.src}.`));
               document.body.appendChild(script);
             })

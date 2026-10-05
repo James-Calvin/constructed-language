@@ -15,17 +15,16 @@
 
     <h1>xo Generator Settings</h1>
     <p class="settings-intro">
-      Edit the local generation rules used by this browser. Valid drafts apply automatically to future generations.
+      Edit the generation rules. Valid drafts apply locally; export them to share through the database.
     </p>
 
     <section class="settings-toolbar" aria-label="Settings actions">
       <div class="settings-toolbar-group">
-        <button id="importRulesBtn" class="settings-btn" type="button">Import</button>
-        <button id="exportRulesBtn" class="settings-btn" type="button">Export</button>
+        <button id="importRulesBtn" class="settings-btn" type="button">Import from database</button>
+        <button id="exportRulesBtn" class="settings-btn" type="button">Export to database</button>
         <button id="blankSlateBtn" class="settings-btn is-danger" type="button">Blank slate</button>
         <button id="restoreDefaultsBtn" class="settings-btn" type="button">Restore defaults</button>
       </div>
-      <input id="importRulesInput" type="file" accept="application/json,.json" hidden>
     </section>
 
     <section class="settings-status-panel" aria-live="polite">
@@ -118,8 +117,11 @@
     <datalist id="knownRuleSymbols"></datalist>
   </main>
 
+  <script type="application/x-protected-script" data-protected-src="aws-config.js"></script>
+  <script type="application/x-protected-script" data-protected-src="https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js"></script>
   <script type="application/x-protected-script" data-protected-src="shared.js"></script>
   <script type="application/x-protected-script" data-protected-src="rules-config.js"></script>
+  <script type="application/x-protected-script" data-protected-src="database-settings.js" data-protected-ready="SECRET_RULES_READY"></script>
   <script type="application/x-protected-script" data-protected-src="settings.js"></script>
 </body>
 </html>
