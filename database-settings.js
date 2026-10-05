@@ -2,6 +2,7 @@
   "use strict";
 
   const SETTINGS_ROW_ID = "__secret_language_settings__";
+  const SETTINGS_TIMESTAMP = 0;
   const SETTINGS_RECORD_TYPE = "languageSettings";
   const sharedApi = globalScope.LOVE_LANGUAGE_SHARED || {};
   const rulesApi = globalScope.LOVE_LANGUAGE_RULES || {};
@@ -75,7 +76,10 @@
     const response = await client
       .get({
         TableName: awsRuntime.awsConfig.heartsTableName,
-        Key: { rowId: SETTINGS_ROW_ID },
+        Key: {
+          rowId: SETTINGS_ROW_ID,
+          timestamp: SETTINGS_TIMESTAMP
+        },
         ConsistentRead: true
       })
       .promise();
@@ -99,6 +103,7 @@
         TableName: awsRuntime.awsConfig.heartsTableName,
         Item: {
           rowId: SETTINGS_ROW_ID,
+          timestamp: SETTINGS_TIMESTAMP,
           recordType: SETTINGS_RECORD_TYPE,
           draftRules: normalizedDraft,
           activeRules: normalizedActive,
@@ -112,6 +117,7 @@
 
   const api = {
     SETTINGS_ROW_ID,
+    SETTINGS_TIMESTAMP,
     SETTINGS_RECORD_TYPE,
     isConfigured: Boolean(awsRuntime && awsRuntime.isHeartsConfigured),
     loadRulesFromDatabase,
