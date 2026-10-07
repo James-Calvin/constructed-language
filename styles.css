@@ -1139,6 +1139,12 @@ h2 {
   font-weight: 800;
 }
 
+.dictionary-composer-optional-label {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
 .dictionary-composer-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -247,7 +247,7 @@ function getManualComposerFieldErrors() {
   return {
     word: hasMeaningText(normalizedWord) ? "" : "Word is required.",
     pronunciation: hasMeaningText(manualComposerState.pronunciation) ? "" : "IPA is required.",
-    meaning: hasMeaningText(manualComposerState.meaning) ? "" : "Meaning is required."
+    meaning: ""
   };
 }
 
@@ -756,14 +756,14 @@ function renderManualComposer() {
       </label>
       <label class="dictionary-composer-field dictionary-composer-field-wide" data-composer-field="meaning">
         <span class="dictionary-composer-label">
-          Meaning <span class="dictionary-composer-required-star" aria-hidden="true">*</span>
+          Meaning <span class="dictionary-composer-optional-label">(optional)</span>
         </span>
         <input
           id="dictionaryComposerMeaning"
           class="dictionary-composer-input"
           type="text"
           autocomplete="off"
-          aria-required="true"
+          aria-required="false"
           aria-describedby="dictionaryComposerMeaningError"
           value="${escapeXml(manualComposerState.meaning)}"
           ${manualComposerState.saveStatus === "saving" ? "disabled" : ""}
@@ -2102,13 +2102,16 @@ async function handleSaveManualWord() {
     };
 
     const now = Date.now();
+    const hasNewMeaning = hasMeaningText(meaning);
     record.user = currentUserId;
     record.word = word;
     record.pronunciation = pronunciation;
-    record.meaning = meaning;
+    record.meaning = hasNewMeaning ? meaning : record.meaning;
     record.hearted = true;
     record.updatedTimestamp = now;
-    record.meaningUpdatedTimestamp = meaning ? now : null;
+    record.meaningUpdatedTimestamp = hasNewMeaning
+      ? now
+      : record.meaningUpdatedTimestamp ?? null;
     record.unheartedTimestamp = null;
 
     await putDictionaryRecord(record);
@@ -2116,7 +2119,10 @@ async function handleSaveManualWord() {
     rebuildGroupsFromEntries();
     const nextGroup = getGroupByWord(word);
     if (nextGroup && !isGroupVisible(nextGroup)) {
-      activeFilter = FILTERS.DEFINED;
+      activeFilter =
+        nextGroup.classification === GROUP_CLASSIFICATIONS.UNDEFINED
+          ? FILTERS.UNDEFINED
+          : FILTERS.DEFINED;
     }
 
     selectedWord = word;
