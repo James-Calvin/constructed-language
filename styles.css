@@ -1610,6 +1610,11 @@ h2 {
   letter-spacing: 0.01em;
 }
 
+.dictionary-definition-author {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
 .dictionary-status-badge {
   display: inline-flex;
   align-items: center;

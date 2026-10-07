@@ -146,6 +146,13 @@ function getActivityTimestamp(item) {
   return Math.max(toEpochMs(item && item.updatedTimestamp), toEpochMs(item && item.timestamp));
 }
 
+function getMeaningTimestamp(item) {
+  if (!hasMeaningText(item && item.meaning)) {
+    return 0;
+  }
+  return toEpochMs(item.meaningUpdatedTimestamp) || getActivityTimestamp(item);
+}
+
 function buildCanonicalRecordRowId(userId, word) {
   return `${encodeURIComponent(trimOrEmpty(userId))}::${encodeURIComponent(trimOrEmpty(word))}`;
 }
@@ -559,8 +566,12 @@ function sortMatchesByActivityDesc(items) {
   return [...items].sort((a, b) => getActivityTimestamp(b) - getActivityTimestamp(a));
 }
 
+function sortMatchesByMeaningDesc(items) {
+  return [...items].sort((a, b) => getMeaningTimestamp(b) - getMeaningTimestamp(a));
+}
+
 function findNewestNonEmptyMeaningMatch(items) {
-  const sorted = sortMatchesByActivityDesc(items);
+  const sorted = sortMatchesByMeaningDesc(items);
   return sorted.find((item) => hasMeaningText(item.meaning)) || null;
 }
 
@@ -569,6 +580,7 @@ function logMeaningMatchesFromFullRead(word, matches) {
     rowId: item.rowId,
     timestamp: item.timestamp,
     updatedTimestamp: item.updatedTimestamp ?? null,
+    meaningUpdatedTimestamp: item.meaningUpdatedTimestamp ?? null,
     user: item.user ?? null,
     hearted: item.hearted ?? null,
     meaning: item.meaning ?? null
@@ -638,6 +650,7 @@ async function scanWordMatches(word) {
           "#hearted": "hearted",
           "#timestamp": "timestamp",
           "#updatedTimestamp": "updatedTimestamp",
+          "#meaningUpdatedTimestamp": "meaningUpdatedTimestamp",
           "#user": "user",
           "#unheartedTimestamp": "unheartedTimestamp"
         },
@@ -645,7 +658,7 @@ async function scanWordMatches(word) {
           ":word": word
         },
         ProjectionExpression:
-          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #user, #unheartedTimestamp",
+          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #user, #unheartedTimestamp",
         ExclusiveStartKey: lastEvaluatedKey
       })
       .promise();
@@ -689,6 +702,8 @@ async function lookupWordState(word) {
       indexedMatches.some(
         (item) =>
           !Object.prototype.hasOwnProperty.call(item, "meaning") ||
+          (hasMeaningText(item.meaning) &&
+            !Object.prototype.hasOwnProperty.call(item, "meaningUpdatedTimestamp")) ||
           !Object.prototype.hasOwnProperty.call(item, "user") ||
           !Object.prototype.hasOwnProperty.call(item, "hearted") ||
           !Object.prototype.hasOwnProperty.call(item, "updatedTimestamp")
@@ -702,7 +717,7 @@ async function lookupWordState(word) {
         currentUserMatch: findNewestCurrentUserMatch(fallbackMatches, currentUserId),
         latestMeaningMatch: findNewestNonEmptyMeaningMatch(fallbackMatches),
         latestImportedMeaningMatch:
-          sortMatchesByActivityDesc(fallbackMatches).find(
+          sortMatchesByMeaningDesc(fallbackMatches).find(
             (item) => trimOrEmpty(item.user) !== currentUserId && hasMeaningText(item.meaning)
           ) || null,
         usedFullRead: true,
@@ -715,7 +730,7 @@ async function lookupWordState(word) {
       currentUserMatch: findNewestCurrentUserMatch(indexedMatches, currentUserId),
       latestMeaningMatch: findNewestNonEmptyMeaningMatch(indexedMatches),
       latestImportedMeaningMatch:
-        sortMatchesByActivityDesc(indexedMatches).find(
+        sortMatchesByMeaningDesc(indexedMatches).find(
           (item) => trimOrEmpty(item.user) !== currentUserId && hasMeaningText(item.meaning)
         ) || null,
       usedFullRead: false,
@@ -731,7 +746,7 @@ async function lookupWordState(word) {
       currentUserMatch: findNewestCurrentUserMatch(fallbackMatches, currentUserId),
       latestMeaningMatch: findNewestNonEmptyMeaningMatch(fallbackMatches),
       latestImportedMeaningMatch:
-        sortMatchesByActivityDesc(fallbackMatches).find(
+        sortMatchesByMeaningDesc(fallbackMatches).find(
           (item) => trimOrEmpty(item.user) !== currentUserId && hasMeaningText(item.meaning)
         ) || null,
       usedFullRead: true,
@@ -828,6 +843,7 @@ async function persistHeartedState(state, hearted) {
 
 async function persistOwnMeaning(state, meaning) {
   state.ownMeaning = meaning;
+  state.meaningUpdatedTimestamp = Date.now();
   await putCurrentUserRecord(state);
 }
 
@@ -849,6 +865,7 @@ function buildHeartTableItem(state) {
     word: state.word,
     pronunciation: state.ipa,
     meaning: state.ownMeaning || null,
+    meaningUpdatedTimestamp: state.meaningUpdatedTimestamp ?? null,
     hearted: Boolean(state.hearted),
     updatedTimestamp: state.updatedTimestamp,
     unheartedTimestamp: state.unheartedTimestamp ?? null
@@ -902,6 +919,7 @@ function createRowState(generated) {
     ipa: generated.ipa,
     hearted: false,
     ownMeaning: null,
+    meaningUpdatedTimestamp: null,
     displayMeaning: null,
     displayMeaningSource: DISPLAY_MEANING_SOURCES.NONE,
     draftMeaning: "",
@@ -1010,6 +1028,7 @@ function serializeRowState(state) {
   const importedTimestamp = Number(state.importedSourceTimestamp);
   const unheartedTimestamp = Number(state.unheartedTimestamp);
   const ownMeaning = trimOrEmpty(state.ownMeaning);
+  const meaningUpdatedTimestamp = Number(state.meaningUpdatedTimestamp);
   const displayMeaning = trimOrEmpty(state.displayMeaning);
   const draftMeaning = typeof state.draftMeaning === "string" ? state.draftMeaning : "";
   const draftUpdatedTimestamp = Number(state.draftUpdatedTimestamp);
@@ -1030,6 +1049,8 @@ function serializeRowState(state) {
     ipa: state.ipa,
     hearted: Boolean(state.hearted),
     ownMeaning: ownMeaning || null,
+    meaningUpdatedTimestamp:
+      ownMeaning && Number.isFinite(meaningUpdatedTimestamp) ? meaningUpdatedTimestamp : null,
     displayMeaning: displayMeaning || null,
     displayMeaningSource: trimOrEmpty(state.displayMeaningSource),
     draftMeaning,
@@ -1068,6 +1089,12 @@ function deserializeRowState(rawState) {
         : null;
 
   const ownMeaning = hasMeaningText(rawState.ownMeaning) ? trimOrEmpty(rawState.ownMeaning) : null;
+  const rawMeaningUpdatedTimestamp = Number(rawState.meaningUpdatedTimestamp);
+  const meaningUpdatedTimestamp = ownMeaning
+    ? Number.isFinite(rawMeaningUpdatedTimestamp)
+      ? rawMeaningUpdatedTimestamp
+      : updatedTimestamp
+    : null;
   const displayMeaning = hasMeaningText(rawState.displayMeaning)
     ? trimOrEmpty(rawState.displayMeaning)
     : ownMeaning;
@@ -1094,6 +1121,7 @@ function deserializeRowState(rawState) {
     ipa,
     hearted: Boolean(rawState.hearted),
     ownMeaning,
+    meaningUpdatedTimestamp,
     displayMeaning,
     displayMeaningSource:
       displayMeaningSource === DISPLAY_MEANING_SOURCES.IMPORTED
@@ -1347,6 +1375,9 @@ function applyCurrentUserMatchToState(state, match) {
   state.unheartedTimestamp = toEpochMs(match.unheartedTimestamp) || null;
   state.hearted = Boolean(match.hearted);
   state.ownMeaning = hasMeaningText(match.meaning) ? trimOrEmpty(match.meaning) : null;
+  state.meaningUpdatedTimestamp = state.ownMeaning
+    ? toEpochMs(match.meaningUpdatedTimestamp) || getActivityTimestamp(match)
+    : null;
   if (!state.isEditing && getDraftMeaningTimestamp(state) <= getActivityTimestamp(match)) {
     state.draftMeaning = state.ownMeaning || "";
     state.draftUpdatedTimestamp = null;
@@ -1657,6 +1688,7 @@ async function handleSaveMeaning(rowId) {
   }
 
   const previousOwnMeaning = state.ownMeaning;
+  const previousMeaningUpdatedTimestamp = state.meaningUpdatedTimestamp;
   const previousDisplayMeaning = state.displayMeaning;
   const previousDisplayMeaningSource = state.displayMeaningSource;
   const previousEditing = state.isEditing;
@@ -1679,6 +1711,7 @@ async function handleSaveMeaning(rowId) {
     await persistOwnMeaning(state, trimmedMeaning);
   } catch (error) {
     state.ownMeaning = previousOwnMeaning;
+    state.meaningUpdatedTimestamp = previousMeaningUpdatedTimestamp;
     state.displayMeaning = previousDisplayMeaning;
     state.displayMeaningSource = previousDisplayMeaningSource;
     state.isEditing = previousEditing;

@@ -204,6 +204,19 @@ function sortRecordsByActivityDesc(records) {
   return [...records].sort((left, right) => getActivityTimestamp(right) - getActivityTimestamp(left));
 }
 
+function getDefinitionTimestamp(record) {
+  if (!hasDefinedMeaning(record)) {
+    return 0;
+  }
+  return toEpochMs(record.meaningUpdatedTimestamp) || getActivityTimestamp(record);
+}
+
+function sortRecordsByDefinitionDesc(records) {
+  return [...records].sort(
+    (left, right) => getDefinitionTimestamp(right) - getDefinitionTimestamp(left)
+  );
+}
+
 function isValidFilter(filter) {
   return filter === FILTERS.DEFINED || filter === FILTERS.UNDEFINED || filter === FILTERS.ALL;
 }
@@ -216,13 +229,23 @@ function getGroupStatusLabel(classification) {
   return classification === GROUP_CLASSIFICATIONS.UNDEFINED ? "Undefined" : "Defined";
 }
 
+function getDefinitionAuthorLabel(record) {
+  const user = trimOrEmpty(record && record.user);
+  if (!user) {
+    return "unknown user";
+  }
+
+  return user.includes(":") ? "legacy user" : user;
+}
+
 function getManualComposerSaveLabel() {
   return manualComposerState.saveStatus === "saving" ? "Saving..." : "Save word";
 }
 
 function getManualComposerFieldErrors() {
+  const normalizedWord = trimOrEmpty(manualComposerState.word).replace(/[.-]/g, "");
   return {
-    word: hasMeaningText(manualComposerState.word) ? "" : "Word is required.",
+    word: hasMeaningText(normalizedWord) ? "" : "Word is required.",
     pronunciation: hasMeaningText(manualComposerState.pronunciation) ? "" : "IPA is required.",
     meaning: hasMeaningText(manualComposerState.meaning) ? "" : "Meaning is required."
   };
@@ -313,23 +336,48 @@ function syncManualComposerValidation() {
     return manualComposerState.validation;
   }
 
-  if (!hasMeaningText(manualComposerState.word) || !hasMeaningText(manualComposerState.pronunciation)) {
+  if (!hasMeaningText(manualComposerState.word)) {
     manualComposerState.validation = createManualComposerValidation();
     return manualComposerState.validation;
   }
 
   const activeRuleConfig = loadActiveRuleConfig();
+  const derivation = derivePronunciationFromSpelling({
+    spelling: manualComposerState.word,
+    config: activeRuleConfig
+  });
+  const mappingWarnings = Array.isArray(derivation.warnings) ? derivation.warnings : [];
   const activeRuleValidation = validateRuleConfig(activeRuleConfig);
   if (!activeRuleValidation.isValid) {
-    manualComposerState.validation = createManualComposerValidation();
+    manualComposerState.validation = {
+      available: true,
+      matchesRules: mappingWarnings.length === 0,
+      warnings: mappingWarnings,
+      segmentation: [],
+      expectedPronunciation: derivation.pronunciation || ""
+    };
     return manualComposerState.validation;
   }
 
-  manualComposerState.validation = analyzeEntryAgainstRuleConfig({
-    word: manualComposerState.word,
-    pronunciation: manualComposerState.pronunciation,
-    config: activeRuleValidation.config
-  });
+  const ruleValidation = hasMeaningText(manualComposerState.pronunciation)
+    ? analyzeEntryAgainstRuleConfig({
+        word: derivation.word,
+        pronunciation: manualComposerState.pronunciation,
+        config: activeRuleValidation.config
+      })
+    : createManualComposerValidation();
+  const warnings = [
+    ...mappingWarnings,
+    ...(Array.isArray(ruleValidation.warnings) ? ruleValidation.warnings : [])
+  ].filter((warning, index, values) => warning && values.indexOf(warning) === index);
+
+  manualComposerState.validation = {
+    ...ruleValidation,
+    available: true,
+    matchesRules: warnings.length === 0,
+    warnings,
+    expectedPronunciation: derivation.pronunciation || ruleValidation.expectedPronunciation || ""
+  };
 
   return manualComposerState.validation;
 }
@@ -402,6 +450,9 @@ function normalizeDictionaryEntry(rawItem) {
 
   const timestamp = toEpochMs(rawItem.timestamp) || Date.now();
   const updatedTimestamp = toEpochMs(rawItem.updatedTimestamp) || timestamp;
+  const meaningUpdatedTimestamp = hasMeaningText(rawItem.meaning)
+    ? toEpochMs(rawItem.meaningUpdatedTimestamp) || updatedTimestamp
+    : null;
   const rawUnheartedTimestamp = toEpochMs(rawItem.unheartedTimestamp);
 
   return {
@@ -409,6 +460,7 @@ function normalizeDictionaryEntry(rawItem) {
     rowId,
     timestamp,
     updatedTimestamp,
+    meaningUpdatedTimestamp,
     unheartedTimestamp: rawUnheartedTimestamp > 0 ? rawUnheartedTimestamp : null,
     user: trimOrEmpty(rawItem.user),
     word,
@@ -429,6 +481,7 @@ function buildDictionaryTableItem(record) {
     meaning: record.meaning || null,
     hearted: Boolean(record.hearted),
     updatedTimestamp: record.updatedTimestamp,
+    meaningUpdatedTimestamp: record.meaningUpdatedTimestamp ?? null,
     unheartedTimestamp: record.unheartedTimestamp ?? null
   };
 }
@@ -456,11 +509,12 @@ async function scanDictionaryEntries() {
           "#hearted": "hearted",
           "#timestamp": "timestamp",
           "#updatedTimestamp": "updatedTimestamp",
+          "#meaningUpdatedTimestamp": "meaningUpdatedTimestamp",
           "#user": "user",
           "#unheartedTimestamp": "unheartedTimestamp"
         },
         ProjectionExpression:
-          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #user, #unheartedTimestamp",
+          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #user, #unheartedTimestamp",
         ExclusiveStartKey: lastEvaluatedKey
       })
       .promise();
@@ -514,7 +568,9 @@ function rebuildGroupsFromEntries() {
   const nextGroups = [];
   for (const [word, wordRecords] of recordsByWord.entries()) {
     const sortedRecords = sortRecordsByActivityDesc(wordRecords);
-    const definitionHistory = sortedRecords.filter((record) => hasDefinedMeaning(record));
+    const definitionHistory = sortRecordsByDefinitionDesc(
+      sortedRecords.filter((record) => hasDefinedMeaning(record))
+    );
     const currentUserRecord = sortedRecords.find((record) => matchesCurrentUserRecord(record)) || null;
     const hasAnyHeart = sortedRecords.some((record) => record.hearted);
     const isDictionaryVisible = hasAnyHeart || definitionHistory.length > 0;
@@ -658,7 +714,7 @@ function renderManualComposer() {
     <div class="dictionary-composer-header">
       <div>
         <h2 class="dictionary-composer-title">Add a Manual Word</h2>
-        <p class="dictionary-composer-help">Create your own word directly in the dictionary. This bypasses generation.</p>
+        <p class="dictionary-composer-help">Type configured symbols to fill IPA automatically. Use periods or hyphens as temporary syllable separators.</p>
       </div>
       <p class="dictionary-composer-required-note">
         <span class="dictionary-composer-required-star" aria-hidden="true">*</span> is a required field
@@ -690,6 +746,7 @@ function renderManualComposer() {
           class="dictionary-composer-input"
           type="text"
           autocomplete="off"
+          placeholder="Autofilled when mapping is unique"
           aria-required="true"
           aria-describedby="dictionaryComposerPronunciationError"
           value="${escapeXml(manualComposerState.pronunciation)}"
@@ -804,14 +861,23 @@ function syncManualComposerUiState() {
 
   if (wordInput) {
     wordInput.disabled = disableFields;
+    if (wordInput.value !== manualComposerState.word) {
+      wordInput.value = manualComposerState.word;
+    }
   }
 
   if (pronunciationInput) {
     pronunciationInput.disabled = disableFields;
+    if (pronunciationInput.value !== manualComposerState.pronunciation) {
+      pronunciationInput.value = manualComposerState.pronunciation;
+    }
   }
 
   if (meaningInput) {
     meaningInput.disabled = disableFields;
+    if (meaningInput.value !== manualComposerState.meaning) {
+      meaningInput.value = manualComposerState.meaning;
+    }
   }
 
   syncManualComposerFieldNode("word", wordInput, fieldErrors.word);
@@ -1177,6 +1243,13 @@ function createGroupCard(group) {
   badge.textContent = getGroupStatusLabel(group.classification);
 
   wordMeta.append(title, badge);
+
+  if (group.classification === GROUP_CLASSIFICATIONS.DEFINED && group.definitionHistory[0]) {
+    const author = document.createElement("span");
+    author.className = "dictionary-definition-author";
+    author.textContent = `Last defined by ${getDefinitionAuthorLabel(group.definitionHistory[0])}`;
+    wordMeta.appendChild(author);
+  }
   header.appendChild(wordMeta);
 
   const headerControls = document.createElement("div");
@@ -1732,6 +1805,7 @@ async function handleUndefineWord(word) {
   const snapshots = recordsToUpdate.map((record) => ({
     record,
     meaning: record.meaning,
+    meaningUpdatedTimestamp: record.meaningUpdatedTimestamp,
     updatedTimestamp: record.updatedTimestamp
   }));
   group.saveStatus = "saving-meaning";
@@ -1742,6 +1816,7 @@ async function handleUndefineWord(word) {
     const now = Date.now();
     for (const snapshot of snapshots) {
       snapshot.record.meaning = null;
+      snapshot.record.meaningUpdatedTimestamp = null;
       snapshot.record.updatedTimestamp = now;
     }
     await Promise.all(snapshots.map(({ record }) => putDictionaryRecord(record)));
@@ -1755,6 +1830,7 @@ async function handleUndefineWord(word) {
   } catch (error) {
     for (const snapshot of snapshots) {
       snapshot.record.meaning = snapshot.meaning;
+      snapshot.record.meaningUpdatedTimestamp = snapshot.meaningUpdatedTimestamp;
       snapshot.record.updatedTimestamp = snapshot.updatedTimestamp;
     }
     group.saveStatus = "idle";
@@ -1832,6 +1908,7 @@ async function ensureEditableCurrentUserRecord(group, overrides = {}) {
     word: normalizedWord,
     pronunciation: normalizedPronunciation,
     meaning: null,
+    meaningUpdatedTimestamp: null,
     hearted: false,
     copyFlash: false
   };
@@ -1929,6 +2006,7 @@ async function handleSaveMeaning(word) {
     createdRecordId = ensured.created ? record.id : "";
     snapshot = {
       meaning: record.meaning,
+      meaningUpdatedTimestamp: record.meaningUpdatedTimestamp,
       updatedTimestamp: record.updatedTimestamp,
       user: record.user,
       hearted: record.hearted,
@@ -1938,6 +2016,7 @@ async function handleSaveMeaning(word) {
     record.user = currentUserId;
     record.meaning = trimmedMeaning;
     record.updatedTimestamp = Date.now();
+    record.meaningUpdatedTimestamp = record.updatedTimestamp;
 
     await putDictionaryRecord(record);
 
@@ -1958,6 +2037,7 @@ async function handleSaveMeaning(word) {
       const record = group.currentUserRecord;
       if (record) {
         record.meaning = snapshot.meaning;
+        record.meaningUpdatedTimestamp = snapshot.meaningUpdatedTimestamp;
         record.updatedTimestamp = snapshot.updatedTimestamp;
         record.user = snapshot.user;
         record.hearted = snapshot.hearted;
@@ -1977,7 +2057,11 @@ async function handleSaveManualWord() {
     return;
   }
 
-  const word = trimOrEmpty(manualComposerState.word);
+  const spellingDerivation = derivePronunciationFromSpelling({
+    spelling: manualComposerState.word,
+    config: loadActiveRuleConfig()
+  });
+  const word = trimOrEmpty(spellingDerivation.word);
   const pronunciation = trimOrEmpty(manualComposerState.pronunciation);
   const meaning = trimOrEmpty(manualComposerState.meaning);
 
@@ -2010,6 +2094,7 @@ async function handleSaveManualWord() {
       word: record.word,
       pronunciation: record.pronunciation,
       meaning: record.meaning,
+      meaningUpdatedTimestamp: record.meaningUpdatedTimestamp,
       hearted: record.hearted,
       updatedTimestamp: record.updatedTimestamp,
       unheartedTimestamp: record.unheartedTimestamp,
@@ -2023,6 +2108,7 @@ async function handleSaveManualWord() {
     record.meaning = meaning;
     record.hearted = true;
     record.updatedTimestamp = now;
+    record.meaningUpdatedTimestamp = meaning ? now : null;
     record.unheartedTimestamp = null;
 
     await putDictionaryRecord(record);
@@ -2047,6 +2133,7 @@ async function handleSaveManualWord() {
         record.word = snapshot.word;
         record.pronunciation = snapshot.pronunciation;
         record.meaning = snapshot.meaning;
+        record.meaningUpdatedTimestamp = snapshot.meaningUpdatedTimestamp;
         record.hearted = snapshot.hearted;
         record.updatedTimestamp = snapshot.updatedTimestamp;
         record.unheartedTimestamp = snapshot.unheartedTimestamp;
@@ -2151,6 +2238,11 @@ function handleManualComposerInput(event) {
 
   if (target.id === "dictionaryComposerWord") {
     manualComposerState.word = target.value;
+    const derivation = derivePronunciationFromSpelling({
+      spelling: manualComposerState.word,
+      config: loadActiveRuleConfig()
+    });
+    manualComposerState.pronunciation = derivation.pronunciation || "";
   } else if (target.id === "dictionaryComposerPronunciation") {
     manualComposerState.pronunciation = target.value;
   } else if (target.id === "dictionaryComposerMeaning") {
