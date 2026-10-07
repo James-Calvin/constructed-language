@@ -124,6 +124,17 @@ const analyzeEntryAgainstRuleConfig =
         segmentation: [],
         expectedPronunciation: ""
       });
+const derivePronunciationFromSpelling =
+  typeof rulesApi.derivePronunciationFromSpelling === "function"
+    ? rulesApi.derivePronunciationFromSpelling
+    : ({ spelling } = {}) => ({
+        word: trimOrEmpty(spelling).replace(/[.-]/g, ""),
+        pronunciation: "",
+        warnings: ["Symbol-to-IPA mapping is unavailable."],
+        ambiguous: false,
+        complete: false,
+        segmentations: []
+      });
 const activeRulesStorageKey =
   rulesApi.storageKeys && typeof rulesApi.storageKeys.active === "string"
     ? rulesApi.storageKeys.active
@@ -157,6 +168,16 @@ const manualComposerState = {
   hasAttemptedSave: false,
   openWarningIndex: -1,
   saveStatus: "idle"
+};
+
+const wordEditorState = {
+  word: "",
+  spelling: "",
+  pronunciation: "",
+  warnings: [],
+  saveStatus: "idle",
+  error: "",
+  deleteConfirmationWord: ""
 };
 
 function getActivityTimestamp(record) {
@@ -335,16 +356,12 @@ const getHeartsTableClient =
 const ensureAwsCredentials =
   (awsRuntime && awsRuntime.ensureAwsCredentials) ||
   (() => Promise.resolve(false));
-const getIdentityId =
-  (awsRuntime && awsRuntime.getIdentityId) ||
-  (async () => {
-    throw new Error("AWS runtime is unavailable.");
-  });
-
 async function ensureCurrentUserIdentity() {
-  const resolvedIdentity = trimOrEmpty(await getIdentityId());
+  const resolvedIdentity = trimOrEmpty(
+    window.SECRET_CURRENT_USER && window.SECRET_CURRENT_USER.id
+  );
   if (!resolvedIdentity) {
-    throw new Error("Could not resolve the current AWS identity.");
+    throw new Error("A signed-in username is required.");
   }
 
   currentUserId = resolvedIdentity;
@@ -984,6 +1001,156 @@ function createRecordRowElement(group, record, isHistoryEntry) {
   return row;
 }
 
+function resetWordEditor() {
+  wordEditorState.word = "";
+  wordEditorState.spelling = "";
+  wordEditorState.pronunciation = "";
+  wordEditorState.warnings = [];
+  wordEditorState.saveStatus = "idle";
+  wordEditorState.error = "";
+}
+
+function updateWordEditorDerivation(spelling) {
+  wordEditorState.spelling = spelling;
+  const derivation = derivePronunciationFromSpelling({
+    spelling,
+    config: loadActiveRuleConfig()
+  });
+  wordEditorState.pronunciation = derivation.pronunciation || "";
+  wordEditorState.warnings = Array.isArray(derivation.warnings) ? derivation.warnings : [];
+  wordEditorState.error = "";
+  return derivation;
+}
+
+function openWordEditor(word) {
+  const group = getGroupByWord(word);
+  if (!group) {
+    return;
+  }
+
+  wordEditorState.word = group.word;
+  wordEditorState.saveStatus = "idle";
+  wordEditorState.deleteConfirmationWord = "";
+  updateWordEditorDerivation(group.word);
+  selectedWord = group.word;
+  refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: group.word });
+}
+
+function closeWordEditor() {
+  const word = wordEditorState.word;
+  resetWordEditor();
+  refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+}
+
+function createWordEditorElement(group) {
+  const editor = document.createElement("section");
+  editor.className = "dictionary-word-editor";
+  editor.setAttribute("aria-label", `Edit ${group.word}`);
+
+  const fields = document.createElement("div");
+  fields.className = "dictionary-word-editor-fields";
+
+  const spellingLabel = document.createElement("label");
+  spellingLabel.textContent = "Spelling";
+  const spellingInput = document.createElement("input");
+  spellingInput.type = "text";
+  spellingInput.value = wordEditorState.spelling;
+  spellingInput.dataset.wordEditField = "spelling";
+  spellingInput.autocomplete = "off";
+  spellingInput.disabled = wordEditorState.saveStatus !== "idle";
+  spellingLabel.appendChild(spellingInput);
+
+  const pronunciationLabel = document.createElement("label");
+  pronunciationLabel.textContent = "IPA sound";
+  const pronunciationInput = document.createElement("input");
+  pronunciationInput.type = "text";
+  pronunciationInput.value = wordEditorState.pronunciation;
+  pronunciationInput.placeholder = "Enter IPA when it cannot be determined";
+  pronunciationInput.dataset.wordEditField = "pronunciation";
+  pronunciationInput.autocomplete = "off";
+  pronunciationInput.disabled = wordEditorState.saveStatus !== "idle";
+  pronunciationLabel.appendChild(pronunciationInput);
+
+  fields.append(spellingLabel, pronunciationLabel);
+  editor.appendChild(fields);
+
+  const help = document.createElement("p");
+  help.className = "dictionary-word-editor-help";
+  help.textContent = "Use a period or hyphen to mark syllable boundaries. Separators are removed when saved.";
+  editor.appendChild(help);
+
+  if (wordEditorState.warnings.length > 0) {
+    const warnings = document.createElement("ul");
+    warnings.className = "dictionary-word-editor-warnings";
+    for (const warning of wordEditorState.warnings) {
+      const item = document.createElement("li");
+      item.textContent = warning;
+      warnings.appendChild(item);
+    }
+    editor.appendChild(warnings);
+  }
+
+  if (wordEditorState.error) {
+    const error = document.createElement("p");
+    error.className = "dictionary-word-editor-error";
+    error.setAttribute("role", "alert");
+    error.textContent = wordEditorState.error;
+    editor.appendChild(error);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "dictionary-word-editor-actions";
+  const saveButton = document.createElement("button");
+  saveButton.type = "button";
+  saveButton.className = "dictionary-word-action is-primary";
+  saveButton.dataset.action = "save-word-edit";
+  saveButton.textContent = wordEditorState.saveStatus === "saving" ? "Saving…" : "Save spelling";
+  saveButton.disabled = wordEditorState.saveStatus !== "idle";
+
+  const cancelButton = document.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.className = "dictionary-word-action";
+  cancelButton.dataset.action = "cancel-word-edit";
+  cancelButton.textContent = "Cancel";
+  cancelButton.disabled = wordEditorState.saveStatus !== "idle";
+  actions.append(saveButton, cancelButton);
+  editor.appendChild(actions);
+  return editor;
+}
+
+function createWordManagementActions(group) {
+  const actions = document.createElement("div");
+  actions.className = "dictionary-word-management";
+
+  const editButton = document.createElement("button");
+  editButton.type = "button";
+  editButton.className = "dictionary-word-action";
+  editButton.dataset.action = "open-word-editor";
+  editButton.textContent = "Edit spelling";
+  editButton.disabled = group.saveStatus !== "idle";
+  actions.appendChild(editButton);
+
+  if (group.classification === GROUP_CLASSIFICATIONS.DEFINED) {
+    const undefineButton = document.createElement("button");
+    undefineButton.type = "button";
+    undefineButton.className = "dictionary-word-action";
+    undefineButton.dataset.action = "undefine-word";
+    undefineButton.textContent = "Undefine";
+    undefineButton.disabled = group.saveStatus !== "idle";
+    actions.appendChild(undefineButton);
+  }
+
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "dictionary-word-action is-danger";
+  deleteButton.dataset.action = "delete-word";
+  deleteButton.textContent =
+    wordEditorState.deleteConfirmationWord === group.word ? "Confirm delete" : "Delete word";
+  deleteButton.disabled = group.saveStatus !== "idle";
+  actions.appendChild(deleteButton);
+  return actions;
+}
+
 function createGroupCard(group) {
   const displayRecord = group.displayRecord;
   if (!displayRecord) {
@@ -1012,6 +1179,13 @@ function createGroupCard(group) {
   wordMeta.append(title, badge);
   header.appendChild(wordMeta);
 
+  const headerControls = document.createElement("div");
+  headerControls.className = "dictionary-card-header-controls";
+
+  if (selectedWord === group.word) {
+    headerControls.appendChild(createWordManagementActions(group));
+  }
+
   if (historyEntries.length > 0) {
     const toggle = document.createElement("button");
     toggle.type = "button";
@@ -1019,14 +1193,30 @@ function createGroupCard(group) {
     toggle.dataset.action = "toggle-history";
     toggle.dataset.word = group.word;
     toggle.textContent = group.expanded ? "Hide definitions" : `See more (${historyEntries.length})`;
-    header.appendChild(toggle);
+    headerControls.appendChild(toggle);
   }
+
+  header.appendChild(headerControls);
 
   const main = document.createElement("div");
   main.className = "dictionary-main";
   main.appendChild(createRecordRowElement(group, displayRecord, false));
 
-  card.append(header, main);
+  card.appendChild(header);
+
+  if (wordEditorState.deleteConfirmationWord === group.word) {
+    const warning = document.createElement("p");
+    warning.className = "dictionary-delete-warning";
+    warning.setAttribute("role", "alert");
+    warning.textContent = "This permanently deletes every saved record and removes every user's heart for this word. Click Confirm delete to continue.";
+    card.appendChild(warning);
+  }
+
+  if (wordEditorState.word === group.word) {
+    card.appendChild(createWordEditorElement(group));
+  }
+
+  card.appendChild(main);
 
   if (historyEntries.length > 0) {
     const history = document.createElement("div");
@@ -1440,6 +1630,180 @@ async function putDictionaryRecord(record) {
     .promise();
 }
 
+async function deleteDictionaryRecord(record) {
+  const currentHeartsClient = getHeartsTableClient();
+  if (!isDictionaryConfigured || !currentHeartsClient) {
+    throw new Error("Dictionary persistence is not configured.");
+  }
+
+  await ensureCurrentUserIdentity();
+  await currentHeartsClient
+    .delete({
+      TableName: awsConfig.heartsTableName,
+      Key: {
+        rowId: record.rowId,
+        timestamp: record.timestamp
+      }
+    })
+    .promise();
+}
+
+async function handleSaveWordEdit(word) {
+  const group = getGroupByWord(word);
+  if (!group || wordEditorState.saveStatus !== "idle") {
+    return;
+  }
+
+  const derivation = derivePronunciationFromSpelling({
+    spelling: wordEditorState.spelling,
+    config: loadActiveRuleConfig()
+  });
+  const nextWord = trimOrEmpty(derivation.word);
+  const nextPronunciation = trimOrEmpty(wordEditorState.pronunciation);
+
+  if (!nextWord) {
+    wordEditorState.error = "Enter a spelling before saving.";
+    refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+    return;
+  }
+
+  if (!nextPronunciation) {
+    wordEditorState.error = "Enter the IPA sound because it could not be determined automatically.";
+    refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+    return;
+  }
+
+  const conflictingGroup = getGroupByWord(nextWord);
+  if (nextWord !== word && conflictingGroup) {
+    wordEditorState.error = `A word spelled "${nextWord}" already exists.`;
+    refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+    return;
+  }
+
+  const snapshots = group.records.map((record) => ({
+    record,
+    word: record.word,
+    pronunciation: record.pronunciation,
+    updatedTimestamp: record.updatedTimestamp
+  }));
+  wordEditorState.saveStatus = "saving";
+  wordEditorState.error = "";
+  refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+
+  try {
+    await ensureAwsCredentials();
+    const now = Date.now();
+    for (const snapshot of snapshots) {
+      snapshot.record.word = nextWord;
+      snapshot.record.pronunciation = nextPronunciation;
+      snapshot.record.updatedTimestamp = now;
+    }
+    await Promise.all(snapshots.map(({ record }) => putDictionaryRecord(record)));
+
+    resetWordEditor();
+    wordEditorState.deleteConfirmationWord = "";
+    selectedWord = nextWord;
+    rebuildGroupsFromEntries();
+    refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: nextWord });
+  } catch (error) {
+    for (const snapshot of snapshots) {
+      snapshot.record.word = snapshot.word;
+      snapshot.record.pronunciation = snapshot.pronunciation;
+      snapshot.record.updatedTimestamp = snapshot.updatedTimestamp;
+    }
+    wordEditorState.saveStatus = "idle";
+    wordEditorState.error = "Could not save the spelling change.";
+    refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+    console.error("Failed to update dictionary spelling.", error);
+  }
+}
+
+async function handleUndefineWord(word) {
+  const group = getGroupByWord(word);
+  if (!group || group.saveStatus !== "idle") {
+    return;
+  }
+
+  const recordsToUpdate = group.records.filter((record) => hasDefinedMeaning(record));
+  if (recordsToUpdate.length === 0) {
+    return;
+  }
+
+  const snapshots = recordsToUpdate.map((record) => ({
+    record,
+    meaning: record.meaning,
+    updatedTimestamp: record.updatedTimestamp
+  }));
+  group.saveStatus = "saving-meaning";
+  refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+
+  try {
+    await ensureAwsCredentials();
+    const now = Date.now();
+    for (const snapshot of snapshots) {
+      snapshot.record.meaning = null;
+      snapshot.record.updatedTimestamp = now;
+    }
+    await Promise.all(snapshots.map(({ record }) => putDictionaryRecord(record)));
+
+    group.draftMeaning = "";
+    group.hasDraftCache = false;
+    group.isEditing = false;
+    group.saveStatus = "idle";
+    rebuildGroupsFromEntries();
+    refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+  } catch (error) {
+    for (const snapshot of snapshots) {
+      snapshot.record.meaning = snapshot.meaning;
+      snapshot.record.updatedTimestamp = snapshot.updatedTimestamp;
+    }
+    group.saveStatus = "idle";
+    refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+    setStatus("Could not remove this word's definition.", "error");
+    console.error("Failed to undefine dictionary word.", error);
+  }
+}
+
+async function handleDeleteWord(word) {
+  const group = getGroupByWord(word);
+  if (!group) {
+    return;
+  }
+
+  if (wordEditorState.deleteConfirmationWord !== word) {
+    wordEditorState.deleteConfirmationWord = word;
+    refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+    return;
+  }
+
+  const recordsToDelete = [...group.records];
+  group.saveStatus = "deleting";
+  refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+
+  try {
+    await ensureAwsCredentials();
+    await Promise.all(recordsToDelete.map((record) => deleteDictionaryRecord(record)));
+    for (const record of recordsToDelete) {
+      clearCopyFeedback(record.id);
+      recordsById.delete(record.id);
+    }
+
+    wordEditorState.deleteConfirmationWord = "";
+    if (wordEditorState.word === word) {
+      resetWordEditor();
+    }
+    selectedWord = "";
+    rebuildGroupsFromEntries();
+    refreshDictionaryView({ preserveCount: renderedGroupCount });
+  } catch (error) {
+    wordEditorState.deleteConfirmationWord = "";
+    group.saveStatus = "idle";
+    refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+    setStatus("Could not delete every saved record for this word.", "error");
+    console.error("Failed to delete dictionary word.", error);
+  }
+}
+
 async function ensureEditableCurrentUserRecord(group, overrides = {}) {
   const identityId = await ensureCurrentUserIdentity();
   const normalizedWord = trimOrEmpty(overrides.word || (group && group.word));
@@ -1719,6 +2083,34 @@ function handleMeaningInput(event) {
   group.hasDraftCache = true;
 }
 
+function handleWordEditorInput(event) {
+  const input = event.target.closest("[data-word-edit-field]");
+  if (!input || !wordEditorState.word) {
+    return;
+  }
+
+  if (input.dataset.wordEditField === "spelling") {
+    updateWordEditorDerivation(input.value);
+    refreshDictionaryView({
+      preserveCount: renderedGroupCount,
+      preferredWord: wordEditorState.word
+    });
+    window.requestAnimationFrame(() => {
+      const nextInput = document.querySelector("[data-word-edit-field='spelling']");
+      if (nextInput) {
+        nextInput.focus();
+        nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length);
+      }
+    });
+    return;
+  }
+
+  if (input.dataset.wordEditField === "pronunciation") {
+    wordEditorState.pronunciation = input.value;
+    wordEditorState.error = "";
+  }
+}
+
 function handleMeaningInputKeydown(event) {
   const input = event.target.closest(".meaning-input");
   if (!input) {
@@ -1848,6 +2240,35 @@ async function handleDictionaryListClick(event) {
   if (actionButton && actionButton.dataset.action === "toggle-history") {
     toggleHistory(actionButton.dataset.word || "");
     return;
+  }
+
+  const actionCard = actionButton && actionButton.closest(".dictionary-card");
+  const actionWord = trimOrEmpty(actionCard && actionCard.dataset.word);
+  if (actionButton && actionWord) {
+    if (actionButton.dataset.action === "open-word-editor") {
+      openWordEditor(actionWord);
+      return;
+    }
+
+    if (actionButton.dataset.action === "cancel-word-edit") {
+      closeWordEditor();
+      return;
+    }
+
+    if (actionButton.dataset.action === "save-word-edit") {
+      await handleSaveWordEdit(actionWord);
+      return;
+    }
+
+    if (actionButton.dataset.action === "undefine-word") {
+      await handleUndefineWord(actionWord);
+      return;
+    }
+
+    if (actionButton.dataset.action === "delete-word") {
+      await handleDeleteWord(actionWord);
+      return;
+    }
   }
 
   const row = event.target.closest(".dictionary-entry");
@@ -2036,7 +2457,10 @@ if (dictionaryList) {
     void handleDictionaryListClick(event);
   });
 
-  dictionaryList.addEventListener("input", handleMeaningInput);
+  dictionaryList.addEventListener("input", (event) => {
+    handleMeaningInput(event);
+    handleWordEditorInput(event);
+  });
   dictionaryList.addEventListener("keydown", handleMeaningInputKeydown);
 }
 
@@ -2052,7 +2476,7 @@ document.addEventListener("click", (event) => {
   if (
     event.target.closest("#dictionaryComposer") ||
     event.target.closest("#dictionaryAddWordBtn") ||
-    event.target.closest(".dictionary-entry") ||
+    event.target.closest(".dictionary-card") ||
     event.target.closest(".dictionary-history-toggle") ||
     event.target.closest(".dictionary-filter-btn") ||
     event.target.closest(".dictionary-toggle-btn")

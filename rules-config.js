@@ -501,6 +501,91 @@
     });
   }
 
+  function derivePronunciationFromSpelling({ spelling, config } = {}) {
+    const rawSpelling = trimOrEmpty(spelling).replace(/\s+/g, "");
+    const savedWord = rawSpelling.replace(/[.-]/g, "");
+    const normalizedConfig = normalizeRuleConfig(config);
+    const symbolEntries = buildAnalyzerSymbolEntries(normalizedConfig);
+    const rawSegments = rawSpelling.split(/[.-]+/);
+    const segments = rawSegments.filter(Boolean);
+    const warnings = [];
+
+    if (!savedWord) {
+      return {
+        word: "",
+        pronunciation: "",
+        warnings: [],
+        ambiguous: false,
+        complete: false,
+        segmentations: []
+      };
+    }
+
+    if (segments.length === 0 || symbolEntries.length === 0) {
+      return {
+        word: savedWord,
+        pronunciation: "",
+        warnings: ["No symbol-to-IPA mappings are available for this spelling."],
+        ambiguous: false,
+        complete: false,
+        segmentations: []
+      };
+    }
+
+    const segmentMatches = [];
+    for (const segment of segments) {
+      const matches = [];
+
+      function tokenize(index, collected) {
+        if (matches.length >= 2) {
+          return;
+        }
+
+        if (index === segment.length) {
+          matches.push([...collected]);
+          return;
+        }
+
+        for (const entry of symbolEntries) {
+          if (!segment.startsWith(entry.symbol, index)) {
+            continue;
+          }
+          collected.push(entry);
+          tokenize(index + entry.symbol.length, collected);
+          collected.pop();
+        }
+      }
+
+      tokenize(0, []);
+      if (matches.length === 0) {
+        warnings.push(`Could not map every symbol in "${segment}" to IPA.`);
+      } else if (matches.length > 1) {
+        warnings.push(`The spelling "${segment}" has more than one possible symbol-to-IPA mapping.`);
+      }
+      segmentMatches.push(matches);
+    }
+
+    const complete = segmentMatches.every((matches) => matches.length > 0);
+    const ambiguous = segmentMatches.some((matches) => matches.length > 1);
+    const canDeterminePronunciation = complete && !ambiguous;
+    const pronunciation = canDeterminePronunciation
+      ? segmentMatches
+          .map((matches) => matches[0].map((entry) => entry.ipa).join(""))
+          .join(".")
+      : "";
+
+    return {
+      word: savedWord,
+      pronunciation,
+      warnings,
+      ambiguous,
+      complete,
+      segmentations: segmentMatches.map((matches) =>
+        matches.map((match) => match.map((entry) => entry.symbol))
+      )
+    };
+  }
+
   function buildExpectedPronunciation(symbolEntries, syllableSpans) {
     return syllableSpans
       .map((span) =>
@@ -836,6 +921,7 @@
     normalizeRuleConfig,
     validateRuleConfig,
     evaluateRuleConfigCompatibility,
+    derivePronunciationFromSpelling,
     analyzeEntryAgainstRuleConfig,
     loadActiveRuleConfig,
     loadDraftRuleConfig,

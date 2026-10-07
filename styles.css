@@ -75,6 +75,28 @@ html.auth-locked body > :not(.access-gate) {
   color: #ff9ca5;
 }
 
+.account-control {
+  position: fixed;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 50;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.4rem 0.7rem;
+  background: rgba(12, 18, 25, 0.94);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.3);
+}
+
+.account-control:hover,
+.account-control:focus-visible {
+  color: var(--text-main);
+  border-color: var(--accent);
+}
+
 :root {
   --bg-main: #090d12;
   --bg-panel: #131a23;
@@ -1464,6 +1486,116 @@ h2 {
   margin-bottom: 0.35rem;
 }
 
+.dictionary-card-header-controls,
+.dictionary-word-management,
+.dictionary-word-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.dictionary-word-action {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0.35rem 0.55rem;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.dictionary-word-action:hover,
+.dictionary-word-action:focus-visible {
+  color: var(--text-main);
+  border-color: var(--accent);
+}
+
+.dictionary-word-action.is-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #071019;
+  font-weight: 800;
+}
+
+.dictionary-word-action.is-danger,
+.dictionary-word-action.is-danger:hover,
+.dictionary-word-action.is-danger:focus-visible {
+  color: #ff9ca5;
+  border-color: rgba(255, 79, 95, 0.55);
+}
+
+.dictionary-word-action:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.dictionary-word-editor {
+  margin: 0.55rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgba(12, 18, 25, 0.72);
+}
+
+.dictionary-word-editor-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.dictionary-word-editor-fields label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--text-main);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.dictionary-word-editor-fields input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-input);
+  color: var(--text-main);
+  font: inherit;
+}
+
+.dictionary-word-editor-fields input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 153, 255, 0.22);
+}
+
+.dictionary-word-editor-help,
+.dictionary-delete-warning,
+.dictionary-word-editor-error,
+.dictionary-word-editor-warnings {
+  margin: 0.55rem 0;
+  font-size: 0.82rem;
+}
+
+.dictionary-word-editor-help {
+  color: var(--text-muted);
+}
+
+.dictionary-word-editor-warnings,
+.dictionary-delete-warning {
+  color: #ffd97a;
+}
+
+.dictionary-word-editor-warnings {
+  padding-left: 1.2rem;
+}
+
+.dictionary-word-editor-error {
+  color: #ff9ca5;
+}
+
 .dictionary-word-meta {
   display: flex;
   align-items: center;
@@ -1604,6 +1736,21 @@ h2 {
 
   .dictionary-composer-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dictionary-card-header,
+  .dictionary-word-editor-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .dictionary-card-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dictionary-card-header-controls,
+  .dictionary-word-management {
+    justify-content: flex-start;
   }
 
   .dictionary-composer-actions {

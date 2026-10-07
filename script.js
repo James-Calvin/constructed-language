@@ -1,7 +1,11 @@
 const MAX_RESULTS = 50;
 const RETRY_LIMIT = 100;
 const COPY_FEEDBACK_MS = 1200;
-const LOCAL_STORAGE_ROWS_KEY = "secret.generated-rows.v1";
+const CURRENT_BROWSER_USER_ID =
+  window.SECRET_CURRENT_USER && typeof window.SECRET_CURRENT_USER.id === "string"
+    ? window.SECRET_CURRENT_USER.id
+    : "anonymous";
+const LOCAL_STORAGE_ROWS_KEY = `secret.generated-rows.${encodeURIComponent(CURRENT_BROWSER_USER_ID)}.v3`;
 const LOCAL_STORAGE_ROWS_VERSION = 2;
 const LOCAL_STORAGE_SYLLABLE_SETTINGS_KEY = "secret.syllable-settings.v1";
 const PERSIST_SAVE_DEBOUNCE_MS = 250;
@@ -543,11 +547,13 @@ const getHeartsTableClient =
 const ensureAwsCredentials =
   (awsRuntime && awsRuntime.ensureAwsCredentials) ||
   (() => Promise.resolve(false));
-const getIdentityId =
-  (awsRuntime && awsRuntime.getIdentityId) ||
-  (async () => {
-    throw new Error("AWS runtime is unavailable.");
-  });
+function getCurrentUserId() {
+  const userId = trimOrEmpty(window.SECRET_CURRENT_USER && window.SECRET_CURRENT_USER.id);
+  if (!userId) {
+    throw new Error("A signed-in username is required.");
+  }
+  return userId;
+}
 
 function sortMatchesByActivityDesc(items) {
   return [...items].sort((a, b) => getActivityTimestamp(b) - getActivityTimestamp(a));
@@ -674,7 +680,7 @@ async function lookupWordState(word) {
     return null;
   }
 
-  const currentUserId = trimOrEmpty(await getIdentityId());
+  const currentUserId = getCurrentUserId();
 
   try {
     const indexedMatches = await queryWordMatchesByIndex(word);
@@ -790,9 +796,9 @@ async function putCurrentUserRecord(state) {
   }
 
   const now = Date.now();
-  const identityId = trimOrEmpty(await getIdentityId());
+  const identityId = getCurrentUserId();
   const hasCanonicalRecord = Boolean(state.hasPersistedRecord && trimOrEmpty(state.recordRowId));
-  state.user = trimOrEmpty(state.user) || identityId;
+  state.user = identityId;
   state.recordRowId = trimOrEmpty(state.recordRowId) || buildCanonicalRecordRowId(identityId, state.word);
   if (!hasCanonicalRecord) {
     state.timestamp = now;
