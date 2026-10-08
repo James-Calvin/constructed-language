@@ -621,12 +621,10 @@ function rebuildGroupsFromEntries() {
   }
 
   nextGroups.sort((left, right) => {
-    const timestampDiff = right.latestActivityTimestamp - left.latestActivityTimestamp;
-    if (timestampDiff !== 0) {
-      return timestampDiff;
-    }
-
-    return left.word.localeCompare(right.word);
+    return left.word.localeCompare(right.word, undefined, {
+      sensitivity: "base",
+      numeric: true
+    });
   });
 
   groups = nextGroups;
