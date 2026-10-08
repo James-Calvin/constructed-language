@@ -2029,6 +2029,7 @@ window.addEventListener("beforeunload", () => {
   flushPersistedRowsSave();
 });
 window.addEventListener("storage", handleStorageSync);
+window.addEventListener("secret-rules-imported", reloadActiveGeneratorRules);
 
 minInput.addEventListener("change", clampSyllables);
 maxInput.addEventListener("change", clampSyllables);

@@ -1374,6 +1374,24 @@
     renderAll();
   }
 
+  function handleDatabaseRulesImport() {
+    draftConfig = cloneRuleConfig(loadDraftRuleConfig());
+    activeConfig = cloneRuleConfig(loadActiveRuleConfig());
+    draftValidation = validateRuleConfig(draftConfig);
+    resetUiStateFromDraftConfig();
+    clearPendingDeleteState();
+    importFeedbackMessage = "Imported newer language settings from the database.";
+    importFeedbackIsError = false;
+    renderAll();
+  }
+
+  function handleDatabaseRulesUpdateAvailable() {
+    importFeedbackMessage =
+      "Newer database settings are available. Import from database to replace your local edits.";
+    importFeedbackIsError = true;
+    renderStatus();
+  }
+
   if (app) {
     app.addEventListener("click", handleClick);
     app.addEventListener("input", handleInput);
@@ -1402,6 +1420,11 @@
   }
 
   globalScope.addEventListener("storage", handleStorageSync);
+  globalScope.addEventListener("secret-rules-imported", handleDatabaseRulesImport);
+  globalScope.addEventListener(
+    "secret-rules-update-available",
+    handleDatabaseRulesUpdateAvailable
+  );
   document.addEventListener("click", handleDocumentClick);
   renderAll();
 })(window);

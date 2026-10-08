@@ -2597,6 +2597,26 @@ window.addEventListener("storage", (event) => {
   syncManualComposerUiState();
 });
 
+window.addEventListener("secret-rules-imported", () => {
+  if (manualComposerState.isOpen) {
+    const derivation = derivePronunciationFromSpelling({
+      spelling: manualComposerState.word,
+      config: loadActiveRuleConfig()
+    });
+    manualComposerState.pronunciation = derivation.pronunciation || "";
+    syncManualComposerValidation();
+    syncManualComposerUiState();
+  }
+
+  if (wordEditorState.word) {
+    updateWordEditorDerivation(wordEditorState.spelling);
+    refreshDictionaryView({
+      preserveCount: renderedGroupCount,
+      preferredWord: wordEditorState.word
+    });
+  }
+});
+
 window.addEventListener("beforeunload", () => {
   sharedAudio.pause();
   sharedAudio.currentTime = 0;
