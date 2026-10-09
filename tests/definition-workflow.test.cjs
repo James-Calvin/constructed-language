@@ -26,7 +26,8 @@ assert.equal(workflow.canApprove(candidate, 'bob'), true);
 assert.equal(workflow.canApprove(candidate, ''), false);
 assert.equal(workflow.canApprove(approved, 'charlie'), false);
 async function testPersistence() {
-  let previous = { ...approved, rowId: 'alice::sun', timestamp: 1, updatedTimestamp: 12 };
+  let previous = { ...approved, rowId: 'alice::sun', timestamp: 1, updatedTimestamp: 12,
+    conceptData: { id: 'concept-1', text: 'sun', author: 'bob', createdAt: 1 } };
   const writes = [];
   const client = {
     get: () => ({ promise: async () => ({ Item: previous }) }),
@@ -35,8 +36,10 @@ async function testPersistence() {
   const item = { ...previous, hearted: true, updatedTimestamp: 13 };
   // Even a page that never loaded approval metadata must preserve it.
   delete item.definitionReview;
+  delete item.conceptData;
   await workflow.save(client, 'secretWords', item);
   assert.deepEqual(writes[0].Item.definitionReview, approved.definitionReview);
+  assert.deepEqual(writes[0].Item.conceptData, previous.conceptData, 'Heart saves preserve concept linkage');
   assert.ok(writes[0].ConditionExpression.includes('#review'));
   await workflow.save(client, 'secretWords', { ...item, meaning: 'light', meaningUpdatedTimestamp: 14 });
   assert.equal(writes[1].Item.definitionReview.status, 'candidate');

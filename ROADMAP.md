@@ -18,7 +18,9 @@ This document tracks the agreed feature backlog. Mark an item `[x]` when its beh
 - [x] Add optional per-word notes with author and date, hidden in a collapsed area by default.
 - [x] Show a small filled red heart as the unread-notes notification on a word. Track which notes each user has read, and clear the notification when they view those notes.
 
-## Roots and related words
+## Roots and related words (deferred)
+
+Deferred at the user's request; not part of the current implementation pass.
 
 - [ ] Add a simple, optional way to link a word to a root or related word and label the relationship, such as derived form, compound, or variant. Keep this out of the main editing flow unless opened.
 - [ ] Make it easy to generate related candidates from a selected root using the existing Starts with feature.
@@ -37,9 +39,9 @@ This document tracks the agreed feature backlog. Mark an item `[x]` when its beh
 
 ## Meanings that need words
 
-- [ ] Add a shared list of desired definitions or concepts that do not yet have words, separate from undefined words that already have a spelling.
-- [ ] Make it easy to assign an existing word, a generated word, or a manually entered word to a desired definition. A newly defined assignment enters the Candidate approval workflow.
-- [ ] Mark desired definitions as fulfilled when assigned, while keeping unassigned concepts easy to find and work through.
+- [x] Add a shared list of desired definitions or concepts that do not yet have words, separate from undefined words that already have a spelling.
+- [x] Make it easy to assign an existing word, a generated word, or a manually entered word to a desired definition. A newly defined assignment enters the Candidate approval workflow.
+- [x] Mark desired definitions as fulfilled when assigned, while keeping unassigned concepts easy to find and work through.
 
 ## Cooperative refresh
 

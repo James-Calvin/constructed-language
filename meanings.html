@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Meanings that need words</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="auth.js"></script>
+</head>
+<body>
+  <main class="app app-dictionary">
+    <nav class="page-nav page-nav-split">
+      <a class="page-nav-link" href="index.html">Generator</a>
+      <a class="page-nav-link" href="dictionary.html">Dictionary</a>
+    </nav>
+    <h1>Meanings that need words</h1>
+    <p class="concept-help">A shared wishlist of concepts, separate from words with no definition. Assignments enter the dictionary as Candidates for another user's approval.</p>
+    <form id="conceptAddForm" class="concept-add">
+      <label for="conceptText">Definition or concept we need</label>
+      <textarea id="conceptText" rows="2" maxlength="2000" required placeholder="For example: sunlight through leaves"></textarea>
+      <button id="conceptAddButton" class="dictionary-toggle-btn" type="submit" disabled>Add concept</button>
+    </form>
+    <div class="concept-toolbar">
+      <label for="conceptSearch">Find a concept</label>
+      <input id="conceptSearch" type="search" autocomplete="off">
+      <button id="conceptRefresh" class="dictionary-toggle-btn" type="button">Refresh shared list</button>
+    </div>
+    <p id="conceptStatus" role="status" aria-live="polite">Loading concepts…</p>
+    <h2 id="conceptPendingHeading">Needs a word</h2>
+    <ol id="conceptPending" class="concept-list"></ol>
+    <details class="concept-fulfilled">
+      <summary id="conceptFulfilledHeading">Fulfilled</summary>
+      <ol id="conceptFulfilled" class="concept-list"></ol>
+    </details>
+  </main>
+  <script type="application/x-protected-script" data-protected-src="aws-config.js"></script>
+  <script type="application/x-protected-script" data-protected-src="https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js"></script>
+  <script type="application/x-protected-script" data-protected-src="shared.js"></script>
+  <script type="application/x-protected-script" data-protected-src="rules-config.js"></script>
+  <script type="application/x-protected-script" data-protected-src="database-settings.js" data-protected-ready="SECRET_RULES_READY"></script>
+  <script type="application/x-protected-script" data-protected-src="prefix-generator.js"></script>
+  <script type="application/x-protected-script" data-protected-src="meaning-requests.js"></script>
+  <script type="application/x-protected-script" data-protected-src="meanings.js"></script>
+</body>
+</html>

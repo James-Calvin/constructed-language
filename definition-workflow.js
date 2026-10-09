@@ -19,6 +19,8 @@
     const result = await client.get({ TableName: table,
       Key: { rowId: item.rowId, timestamp: item.timestamp }, ConsistentRead: true }).promise();
     item.definitionReview = reviewForSave(item, result.Item);
+    // Generator saves may not have loaded the request metadata from the index.
+    if (result.Item && result.Item.conceptData) item.conceptData = result.Item.conceptData;
     const params = { TableName: table, Item: item };
     if (result.Item) {
       params.ConditionExpression = "#updated = :updated AND (attribute_not_exists(#review) OR #review = :review)";

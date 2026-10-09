@@ -52,6 +52,12 @@ function getWordNotes() {
 }
 let showOnlyMyHearts = false;
 let selectedWord = "";
+const linkedWord = new URLSearchParams(window.location.search).get("word");
+if (linkedWord && dictionarySearch) {
+  dictionarySearch.value = linkedWord;
+  activeFilter = FILTERS.ALL;
+  selectedWord = linkedWord;
+}
 let playingRecordId = "";
 let renderedGroupCount = 0;
 let observer = null;
@@ -474,6 +480,7 @@ function normalizeDictionaryEntry(rawItem) {
     updatedTimestamp,
     meaningUpdatedTimestamp,
     definitionReview: rawItem.definitionReview || null,
+    conceptData: rawItem.conceptData || null,
     unheartedTimestamp: rawUnheartedTimestamp > 0 ? rawUnheartedTimestamp : null,
     user: trimOrEmpty(rawItem.user),
     word,
@@ -496,6 +503,7 @@ function buildDictionaryTableItem(record) {
     updatedTimestamp: record.updatedTimestamp,
     meaningUpdatedTimestamp: record.meaningUpdatedTimestamp ?? null,
     definitionReview: record.definitionReview || null,
+    conceptData: record.conceptData || null,
     unheartedTimestamp: record.unheartedTimestamp ?? null
   };
 }
@@ -526,11 +534,12 @@ async function scanDictionaryEntries() {
           "#meaningUpdatedTimestamp": "meaningUpdatedTimestamp",
           "#definitionReview": "definitionReview",
           "#noteData": "noteData",
+          "#conceptData": "conceptData",
           "#user": "user",
           "#unheartedTimestamp": "unheartedTimestamp"
         },
         ProjectionExpression:
-          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #definitionReview, #noteData, #user, #unheartedTimestamp",
+          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #definitionReview, #noteData, #conceptData, #user, #unheartedTimestamp",
         ExclusiveStartKey: lastEvaluatedKey
       })
       .promise();
@@ -1809,6 +1818,13 @@ async function deleteDictionaryRecord(record) {
   }
 
   await ensureCurrentUserIdentity();
+  if (record.conceptData) {
+    // Delete the word and its hearts, but return its desired concept to the wishlist.
+    await currentHeartsClient.put({ TableName: awsConfig.heartsTableName,
+      Item: { rowId: record.rowId, timestamp: record.timestamp, conceptData: record.conceptData }
+    }).promise();
+    return;
+  }
   await currentHeartsClient
     .delete({
       TableName: awsConfig.heartsTableName,
