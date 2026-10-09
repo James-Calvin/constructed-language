@@ -37,6 +37,7 @@ const clearAllBtn = document.getElementById("clearAllBtn");
 const resultsList = document.getElementById("results");
 
 const generatedWords = new Set();
+let generatorRevision = 0;
 const rowStateById = new Map();
 const audioCache = new Map();
 const copyFeedbackTimers = new Map();
@@ -813,6 +814,7 @@ async function synthesize(word, ipa) {
 }
 
 async function putCurrentUserRecord(state) {
+  generatorRevision++;
   const currentHeartsTableClient = getHeartsTableClient();
   if (!isHeartsConfigured || !currentHeartsTableClient) {
     throw new Error("Hearts persistence is not configured.");
@@ -1501,19 +1503,16 @@ function renderRow(rowId) {
   if (sharedUi.deferEditorRender(row, () => renderRow(rowId))) return;
 
   row.classList.toggle("is-selected", selectedRowId === rowId);
-  const wordLabel = row.querySelector(".word");
-  if (wordLabel) {
-    const sharedHearts = SECRET_DEFINITIONS.sharedHearts([
+  const sharedHearts = SECRET_DEFINITIONS.sharedHearts([
       ...(state.otherHeartUsers || []).map(user => ({ user, hearted: true })),
       { user: getCurrentUserId(), hearted: state.hearted }
     ]);
-    wordLabel.classList.toggle("has-shared-hearts", sharedHearts);
-    wordLabel.title = sharedHearts ? "Hearted by multiple named users" : "";
-  }
 
   const heartButton = row.querySelector(".heart-btn");
   if (heartButton) {
     heartButton.classList.toggle("is-hearted", state.hearted);
+    heartButton.classList.toggle("has-shared-hearts", sharedHearts);
+    heartButton.title = sharedHearts ? "Hearted by multiple named users" : "";
     heartButton.textContent = state.hearted ? "❤" : "♡";
     heartButton.setAttribute("aria-label", state.hearted ? "Remove saved word" : "Save word");
     heartButton.disabled = state.saveStatus !== "idle";
@@ -2067,3 +2066,50 @@ if (generateBtn) {
 if (clearAllBtn) {
   clearAllBtn.addEventListener("click", handleClearAllClick);
 }
+
+const generatorSync = SECRET_COOPERATIVE_REFRESH.start({
+  isBusy: () => [...rowStateById.values()].some(state => state.isEditing || state.saveStatus !== "idle") ||
+    Boolean(document.activeElement && resultsList.contains(document.activeElement) &&
+      document.activeElement.matches("input, textarea, select")),
+  version: () => generatorRevision,
+  read: async () => {
+    if (rowStateById.size === 0) return [];
+    if (!isHeartsConfigured || !await ensureAwsCredentials()) throw new Error("Database access is unavailable.");
+    const items = [];
+    let lastKey;
+    do {
+      const response = await getHeartsTableClient().scan({ TableName: awsConfig.heartsTableName,
+        ConsistentRead: true, ExclusiveStartKey: lastKey }).promise();
+      items.push(...(response.Items || []));
+      lastKey = response.LastEvaluatedKey;
+    } while (lastKey);
+    return items;
+  },
+  apply: items => {
+    for (const state of rowStateById.values()) {
+      const matches = items.filter(item => item.word === state.word && item.pronunciation);
+      const own = findNewestCurrentUserMatch(matches, getCurrentUserId());
+      if (own) applyCurrentUserMatchToState(state, own);
+      else if (state.hasPersistedRecord) {
+        state.hearted = false;
+        state.ownMeaning = null;
+        state.meaningUpdatedTimestamp = null;
+        state.hasPersistedRecord = false;
+        state.recordRowId = "";
+        state.draftMeaning = "";
+        state.hasDraftCache = false;
+        state.draftUpdatedTimestamp = null;
+      }
+      state.otherHeartUsers = [...new Set(matches
+        .filter(item => item.hearted && SECRET_DEFINITIONS.namedUserId(item.user) &&
+          SECRET_DEFINITIONS.namedUserId(item.user) !== SECRET_DEFINITIONS.namedUserId(getCurrentUserId()))
+        .map(item => SECRET_DEFINITIONS.namedUserId(item.user)))];
+      const imported = sortMatchesByMeaningDesc(matches).find(item =>
+        item.user !== getCurrentUserId() && hasMeaningText(item.meaning));
+      syncDisplayMeaning(state, imported || findNewestNonEmptyMeaningMatch(matches));
+      renderRow(state.rowId);
+    }
+    flushPersistedRowsSave();
+  }
+});
+window.addEventListener("beforeunload", () => generatorSync.stop());

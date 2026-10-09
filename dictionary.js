@@ -43,6 +43,8 @@ let visibleGroups = [];
 let activeFilter = FILTERS.DEFINED;
 let currentUserId = "";
 let wordNotes;
+let dictionaryRevision = 0;
+let dictionaryLoaded = false;
 
 function getWordNotes() {
   if (!wordNotes) wordNotes = SECRET_WORD_NOTES.create({
@@ -523,6 +525,7 @@ async function scanDictionaryEntries() {
     const response = await currentHeartsClient
       .scan({
         TableName: awsConfig.heartsTableName,
+        ConsistentRead: true,
         ExpressionAttributeNames: {
           "#rowId": "rowId",
           "#word": "word",
@@ -620,7 +623,8 @@ function rebuildGroupsFromEntries() {
       ? currentUserRecord.meaning
       : "";
     const draftMeaning =
-      previousGroup && previousGroup.hasDraftCache
+      previousGroup && previousGroup.hasDraftCache &&
+      (previousGroup.isEditing || previousGroup.draftMeaning !== trimOrEmpty(previousGroup.currentUserRecord && previousGroup.currentUserRecord.meaning))
         ? previousGroup.draftMeaning
         : currentUserMeaning;
 
@@ -1029,6 +1033,8 @@ function applyRecordRowState(row, group, record, isHistoryEntry) {
   if (heartButton) {
     heartButton.classList.toggle("is-hidden", isHistoryEntry);
     heartButton.classList.toggle("is-hearted", group.hasCurrentUserHeart);
+    heartButton.classList.toggle("has-shared-hearts", group.sharedHearts);
+    heartButton.title = group.sharedHearts ? "Hearted by multiple named users" : "";
     heartButton.textContent = group.hasCurrentUserHeart ? "❤" : "♡";
     heartButton.setAttribute("aria-label", group.hasCurrentUserHeart ? "Remove saved word" : "Save word");
     heartButton.disabled = isHistoryEntry || group.saveStatus !== "idle";
@@ -1270,10 +1276,6 @@ function createGroupCard(group) {
 
   const title = document.createElement("span");
   title.className = "dictionary-word-title";
-  if (group.sharedHearts) {
-    title.classList.add("has-shared-hearts");
-    title.title = "Hearted by multiple named users";
-  }
   title.textContent = group.word;
 
   const badge = document.createElement("span");
@@ -1750,6 +1752,7 @@ function findCurrentUserRecordByWord(word) {
 }
 
 async function handleDefinitionReview(word, approve) {
+  dictionaryRevision++;
   const group = getGroupByWord(word);
   const record = group && group.definitionHistory[0];
   if (!record || group.saveStatus !== "idle") return;
@@ -1800,6 +1803,7 @@ async function handleDefinitionReview(word, approve) {
 }
 
 async function putDictionaryRecord(record) {
+  dictionaryRevision++;
   const currentHeartsClient = getHeartsTableClient();
   if (!isDictionaryConfigured || !currentHeartsClient) {
     throw new Error("Dictionary persistence is not configured.");
@@ -1812,6 +1816,7 @@ async function putDictionaryRecord(record) {
 }
 
 async function deleteDictionaryRecord(record) {
+  dictionaryRevision++;
   const currentHeartsClient = getHeartsTableClient();
   if (!isDictionaryConfigured || !currentHeartsClient) {
     throw new Error("Dictionary persistence is not configured.");
@@ -2598,12 +2603,45 @@ function handleAddWordButtonClick() {
   openManualComposer();
 }
 
+function dictionaryRefreshBusy() {
+  const field = document.activeElement;
+  return !dictionaryLoaded || manualComposerState.isOpen || Boolean(wordEditorState.word) ||
+    Boolean(wordEditorState.deleteConfirmationWord) || groups.some(group => group.isEditing || group.saveStatus !== "idle") ||
+    getWordNotes().isBusy() || Boolean(field && dictionaryList.contains(field) && field.matches("input, textarea, select"));
+}
+
+function applyDictionarySnapshot(rawItems, background = true) {
+  const previousCount = renderedGroupCount;
+  const scroll = { x: window.scrollX, y: window.scrollY };
+  const anchor = background && [...dictionaryList.children].find(card => card.getBoundingClientRect().bottom > 0);
+  const anchorWord = anchor && anchor.dataset.word;
+  const anchorTop = anchor && anchor.getBoundingClientRect().top;
+  getWordNotes().load(rawItems);
+  const previousRecords = new Map(recordsById);
+  recordsById.clear();
+  for (const rawItem of rawItems) {
+    const record = normalizeDictionaryEntry(rawItem);
+    if (!record) continue;
+    record.copyFlash = Boolean(previousRecords.get(record.id)?.copyFlash);
+    recordsById.set(record.id, record);
+  }
+  rebuildGroupsFromEntries();
+  const anchorIndex = background ? groups.filter(isGroupVisible).findIndex(group => group.word === anchorWord) : -1;
+  refreshDictionaryView({ preserveCount: background ? Math.max(previousCount, anchorIndex + 1) : 0, preferredWord: selectedWord });
+  if (background) {
+    const nextAnchor = [...dictionaryList.children].find(card => card.dataset.word === anchorWord);
+    const offset = nextAnchor ? nextAnchor.getBoundingClientRect().top - anchorTop : 0;
+    window.scrollTo({ left: scroll.x, top: scroll.y + offset, behavior: "instant" });
+  }
+}
+
 async function loadDictionary() {
   if (!dictionaryList || !dictionaryStatus) {
     return;
   }
 
   if (!isDictionaryConfigured) {
+    dictionaryLoaded = true;
     setStatus("Dictionary is unavailable. Configure AWS guest access to load saved words.", "error");
     updateFilterControls();
     updateSentinelVisibility();
@@ -2614,6 +2652,7 @@ async function loadDictionary() {
 
   const ready = await ensureAwsCredentials();
   if (!ready) {
+    dictionaryLoaded = true;
     setStatus("Could not initialize AWS guest credentials.", "error");
     updateFilterControls();
     updateSentinelVisibility();
@@ -2623,25 +2662,15 @@ async function loadDictionary() {
   try {
     await ensureCurrentUserIdentity();
     const rawItems = await scanDictionaryEntries();
-    getWordNotes().load(rawItems);
-
-    recordsById.clear();
-    for (const rawItem of rawItems) {
-      const record = normalizeDictionaryEntry(rawItem);
-      if (!record) {
-        continue;
-      }
-
-      recordsById.set(record.id, record);
-    }
-
-    rebuildGroupsFromEntries();
-    refreshDictionaryView();
+    applyDictionarySnapshot(rawItems, false);
+    dictionarySync.seed(rawItems);
   } catch (error) {
     console.error("Failed to load dictionary entries.", error);
     setStatus("Failed to load dictionary entries.", "error");
     updateFilterControls();
     updateSentinelVisibility();
+  } finally {
+    dictionaryLoaded = true;
   }
 }
 
@@ -2766,4 +2795,19 @@ window.addEventListener("beforeunload", () => {
   }
 });
 
+const dictionarySync = SECRET_COOPERATIVE_REFRESH.start({
+  isBusy: dictionaryRefreshBusy,
+  version: () => `${dictionaryRevision}:${getWordNotes().version()}`,
+  read: async () => {
+    if (!isDictionaryConfigured || !await ensureAwsCredentials()) throw new Error("Database access is unavailable.");
+    return scanDictionaryEntries();
+  },
+  apply: applyDictionarySnapshot,
+  onSuccess: () => { document.getElementById("dictionarySyncStatus").textContent = ""; },
+  onError: error => {
+    console.warn("Dictionary refresh failed; retaining the current dictionary and edits.", error);
+    document.getElementById("dictionarySyncStatus").textContent = "Could not refresh shared words. Your current view is kept; automatic refresh will retry.";
+  }
+});
+window.addEventListener("beforeunload", () => dictionarySync.stop());
 void loadDictionary();

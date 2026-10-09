@@ -45,6 +45,9 @@ async function run() {
   await textarea.fire('input');
   panel = bob.render('sol');
   assert.equal(panel.children[2].children[0].value, textarea.value);
+  bob.load([...database.values()]);
+  panel = bob.render('sol');
+  assert.equal(panel.children[2].children[0].value, textarea.value, 'Incoming shared snapshots preserve local note drafts');
   failWrites = true;
   await assert.rejects(bob.markRead('sol'), /Offline/);
   assert.equal(bob.unreadNotes('sol').length, 2, 'Failed receipts remain unread');

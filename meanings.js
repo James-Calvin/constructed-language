@@ -19,6 +19,7 @@
   let ready = false;
   let loading = false;
   let adding = false;
+  let meaningsRevision = 0;
 
   function element(tag, className, text) {
     const node = document.createElement(tag);
@@ -77,6 +78,7 @@
       return view;
     }
     const details = element("details", "concept-assignment");
+    view.details = details;
     details.append(element("summary", "", "Assign a word"));
     const form = element("form", "concept-assignment-form");
     const existing = element("select");
@@ -148,6 +150,7 @@
     form.addEventListener("submit", async event => {
       event.preventDefault();
       if (view.busy) return;
+      meaningsRevision++;
       view.busy = true;
       const controls = [...form.querySelectorAll("input, select, button")];
       controls.forEach(control => { control.disabled = true; });
@@ -204,25 +207,42 @@
     document.getElementById("conceptPendingHeading").textContent = `Needs a word (${pendingCount})`;
     document.getElementById("conceptFulfilledHeading").textContent = `Fulfilled (${fulfilledCount})`;
   }
+  async function readSharedConcepts() {
+    if (!runtime.isHeartsConfigured || !await runtime.ensureAwsCredentials()) throw new Error("Could not initialize database access.");
+    const raw = [];
+    let lastKey;
+    do {
+      const response = await runtime.getHeartsTableClient().scan({ TableName: runtime.awsConfig.heartsTableName,
+        ConsistentRead: true, ExclusiveStartKey: lastKey }).promise();
+      raw.push(...(response.Items || []));
+      lastKey = response.LastEvaluatedKey;
+    } while (lastKey);
+    return raw;
+  }
+  function applySharedConcepts(raw, background = false) {
+    const x = window.scrollX;
+    const y = window.scrollY;
+    requests.load(raw);
+    words = availableWords(raw);
+    render();
+    ready = true;
+    addButton.disabled = adding;
+    if (background) window.scrollTo({ left: x, top: y, behavior: "instant" });
+  }
+  function sharedConceptsBusy() {
+    return loading || adding || [...cards.values()].some(view => view.busy || view.details?.open);
+  }
   async function refresh() {
     if (loading || adding || [...cards.values()].some(view => view.busy)) return;
     loading = true;
     refreshButton.disabled = true;
     status.textContent = "Loading shared concepts…";
     try {
-      if (!runtime.isHeartsConfigured || !await runtime.ensureAwsCredentials()) throw new Error("Could not initialize database access.");
-      const raw = [];
-      let lastKey;
-      do {
-        const response = await runtime.getHeartsTableClient().scan({ TableName: runtime.awsConfig.heartsTableName,
-          ConsistentRead: true, ExclusiveStartKey: lastKey }).promise();
-        raw.push(...(response.Items || []));
-        lastKey = response.LastEvaluatedKey;
-      } while (lastKey);
-      requests.load(raw);
-      words = availableWords(raw);
-      render();
-      ready = true;
+      const revision = meaningsRevision;
+      const raw = await readSharedConcepts();
+      if (revision !== meaningsRevision) return;
+      applySharedConcepts(raw);
+      meaningsSync.seed(raw);
       status.textContent = "Shared list up to date. Unassigned concepts stay above; fulfilled concepts are below.";
     } catch (error) { status.textContent = `Could not load concepts: ${error.message}`; console.error(error); }
     finally { loading = false; refreshButton.disabled = false; addButton.disabled = !ready || adding; }
@@ -232,6 +252,7 @@
     if (!ready || loading || adding) return;
     const text = addText.value;
     adding = true;
+    meaningsRevision++;
     addButton.disabled = true;
     try {
       await requests.add(text);
@@ -243,5 +264,19 @@
   });
   search.addEventListener("input", filter);
   refreshButton.addEventListener("click", refresh);
+  const meaningsSync = SECRET_COOPERATIVE_REFRESH.start({
+    read: readSharedConcepts,
+    apply: raw => applySharedConcepts(raw, true),
+    isBusy: sharedConceptsBusy,
+    version: () => meaningsRevision,
+    onSuccess: () => {
+      if (status.textContent.startsWith("Could not refresh shared concepts.")) status.textContent = "Shared list up to date.";
+    },
+    onError: error => {
+      console.warn("Shared concept refresh failed; keeping the current list and drafts.", error);
+      status.textContent = "Could not refresh shared concepts. Your list is kept; automatic refresh will retry.";
+    }
+  });
+  window.addEventListener("beforeunload", () => meaningsSync.stop());
   void refresh();
 })();

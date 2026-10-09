@@ -50,7 +50,8 @@ async function run() {
   let generationCalls = 0;
   const context = {
     console, Set, Map, URLSearchParams,
-    window: { SECRET_CURRENT_USER: { id: 'alice' } },
+    window: { SECRET_CURRENT_USER: { id: 'alice' }, addEventListener() {} },
+    SECRET_COOPERATIVE_REFRESH: { start: () => ({ seed() {}, stop() {} }) },
     document: { createElement: tag => new Element(tag), getElementById: id => nodes[id] },
     SECRET_MEANING_REQUESTS: require('../meaning-requests.js'),
     LOVE_LANGUAGE_SHARED: { createAwsRuntime: () => ({ getHeartsTableClient: () => client,

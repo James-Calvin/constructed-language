@@ -45,7 +45,9 @@ Deferred at the user's request; not part of the current implementation pass.
 
 ## Cooperative refresh
 
-- [ ] Automatically refresh shared dictionary changes while the page is visible and when returning to it, including hearts, definitions, candidates, approvals, and notes. Preserve active editing, cursor position, filters, and scroll position.
+- [x] Automatically refresh shared dictionary changes while the page is visible and when returning to it, including hearts, definitions, candidates, approvals, and notes. Preserve active editing, cursor position, filters, and scroll position.
+
+Refresh runs every 30 seconds while visible and focused, and on return. Dictionary and generator refresh defer during editing/saving and catch up afterward. The meanings-needed list refreshes too. Sunrise yellow applies to heart icons (not word text) when two or more named users have hearted a word; legacy identities do not count.
 
 ## Deferred
 

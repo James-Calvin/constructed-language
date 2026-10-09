@@ -12,6 +12,8 @@
     let items = [];
     const states = new Map();
     const views = new Map();
+    let revision = 0;
+    let pendingWrites = 0;
     function state(word) {
       if (!states.has(word)) states.set(word, { open: false, draft: "", busy: false, error: "" });
       return states.get(word);
@@ -24,9 +26,13 @@
       return unread(notes(word), items.filter(i => i.noteData && i.noteData.kind === "read").map(i => i.noteData), user());
     }
     async function put(item) {
-      await client().put({ TableName: table, Item: item }).promise();
-      const index = items.findIndex(i => i.rowId === item.rowId && i.timestamp === item.timestamp);
-      if (index < 0) items.push(item); else items[index] = item;
+      revision++;
+      pendingWrites++;
+      try {
+        await client().put({ TableName: table, Item: item }).promise();
+        const index = items.findIndex(i => i.rowId === item.rowId && i.timestamp === item.timestamp);
+        if (index < 0) items.push(item); else items[index] = item;
+      } finally { pendingWrites--; revision++; }
     }
     async function markRead(word) {
       const reader = user();
@@ -136,7 +142,8 @@
       }
       states.delete(word);
     }
-    return { load: raw => { items = raw.filter(i => i.noteData); }, render, notes, unreadNotes, markRead, add, rename, remove };
+    return { load: raw => { items = raw.filter(i => i.noteData); }, render, notes, unreadNotes, markRead, add, rename, remove,
+      isBusy: () => pendingWrites > 0, version: () => revision };
   }
   const api = { create, unread, validNote };
   root.SECRET_WORD_NOTES = api;
