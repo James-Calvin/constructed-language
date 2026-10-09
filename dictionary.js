@@ -19,6 +19,7 @@ const EMPTY_STATUS_BY_FILTER = {
 };
 
 const dictionaryFilters = document.getElementById("dictionaryFilters");
+const dictionarySearch = document.getElementById("dictionarySearch");
 const addWordButton = document.getElementById("dictionaryAddWordBtn");
 const myHeartsToggle = document.getElementById("dictionaryMyHeartsToggle");
 const dictionaryComposer = document.getElementById("dictionaryComposer");
@@ -533,6 +534,14 @@ function getGroupByWord(word) {
   return groups.find((group) => group.word === word) || null;
 }
 
+function matchesDictionarySearch(group) {
+  const query = dictionarySearch ? dictionarySearch.value.trim().normalize("NFC").toLowerCase() : "";
+  if (!query) return true;
+  const containsQuery = (value) => typeof value === "string" &&
+    value.normalize("NFC").toLowerCase().includes(query);
+  return containsQuery(group.word) || group.definitionHistory.some((record) => containsQuery(record.meaning));
+}
+
 function isGroupVisible(group) {
   if (!group || !group.isDictionaryVisible) {
     return false;
@@ -541,6 +550,8 @@ function isGroupVisible(group) {
   if (showOnlyMyHearts && !group.hasCurrentUserHeart) {
     return false;
   }
+
+  if (!matchesDictionarySearch(group)) return false;
 
   if (activeFilter === FILTERS.UNDEFINED) {
     return group.classification === GROUP_CLASSIFICATIONS.UNDEFINED;
@@ -641,7 +652,7 @@ function getFilterCounts() {
   let undefinedCount = 0;
 
   for (const group of sourceGroups) {
-    if (!group.isDictionaryVisible) {
+    if (!group.isDictionaryVisible || !matchesDictionarySearch(group)) {
       continue;
     }
 
@@ -1460,7 +1471,9 @@ function refreshDictionaryView(options = {}) {
       observer = null;
     }
     updateSentinelVisibility();
-    setStatus(getEmptyStatusMessage());
+    setStatus(dictionarySearch && dictionarySearch.value.trim()
+      ? "No matching words in the current filters. Try All or clear your search."
+      : getEmptyStatusMessage());
     syncVisibleState();
     return;
   }
@@ -2543,6 +2556,12 @@ if (dictionaryFilters) {
   dictionaryFilters.addEventListener("click", handleFilterClick);
 }
 
+if (dictionarySearch) {
+  dictionarySearch.addEventListener("input", () => {
+    refreshDictionaryView({ preferredWord: selectedWord });
+  });
+}
+
 if (myHeartsToggle) {
   myHeartsToggle.addEventListener("click", handleMyHeartsToggleClick);
 }
@@ -2582,6 +2601,7 @@ document.addEventListener("click", (event) => {
 
   if (
     event.target.closest("#dictionaryComposer") ||
+    event.target.closest(".dictionary-search") ||
     event.target.closest("#dictionaryAddWordBtn") ||
     event.target.closest(".dictionary-card") ||
     event.target.closest(".dictionary-history-toggle") ||

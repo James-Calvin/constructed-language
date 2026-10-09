@@ -1,10 +1,10 @@
 # Cooperative Language Tool Roadmap
 
-This document tracks the agreed feature backlog. Mark an item `[x]` when its behavior is implemented and verified. All items below are pending; creating this roadmap does not mark the features complete.
+This document tracks the agreed feature backlog. Mark an item `[x]` when its behavior is implemented and verified.
 
 ## Dictionary search
 
-- [ ] Add dictionary search by word spelling and definition, working alongside category filters. IPA search is not needed for this pass.
+- [x] Add dictionary search by word spelling and definition, working alongside category filters. IPA search is not needed for this pass.
 
 ## Candidates, approval, and shared hearts
 
