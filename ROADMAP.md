@@ -10,7 +10,7 @@ This document tracks the agreed feature backlog. Mark an item `[x]` when its beh
 
 - [x] Add a Candidate section for newly defined words. Preserve all existing defined words in the Defined category when introducing this workflow.
 - [x] Allow a different user to approve a candidate, moving it into Defined. A word's defining user cannot supply its second-person approval.
-- [x] Add an action to return an accepted Defined word to Candidate for reconsideration.
+- [x] Temporary Defined-to-Candidate action used for the initial review; removed after that cleanup was completed.
 - [x] Render words hearted by multiple distinct users in sunrise yellow. Keep hearts as personal preferences, with approval as an explicit action.
 
 ## Word notes

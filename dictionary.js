@@ -1295,18 +1295,15 @@ function createGroupCard(group) {
   const headerControls = document.createElement("div");
   headerControls.className = "dictionary-card-header-controls";
 
-  if (group.classification !== GROUP_CLASSIFICATIONS.UNDEFINED) {
+  if (group.classification === GROUP_CLASSIFICATIONS.CANDIDATE) {
     const reviewButton = document.createElement("button");
     reviewButton.type = "button";
     reviewButton.className = "dictionary-word-action";
-    const candidate = group.classification === GROUP_CLASSIFICATIONS.CANDIDATE;
     const ownDefinition = group.definitionHistory[0].user === currentUserId;
-    reviewButton.dataset.action = candidate ? "approve-definition" : "reconsider-definition";
-    reviewButton.textContent = candidate
-      ? (ownDefinition ? "Awaiting another user's approval" : "Approve definition")
-      : "Return to candidate";
+    reviewButton.dataset.action = "approve-definition";
+    reviewButton.textContent = ownDefinition ? "Awaiting another user's approval" : "Approve definition";
     reviewButton.disabled = group.saveStatus !== "idle" ||
-      (candidate && !SECRET_DEFINITIONS.canApprove(group.definitionHistory[0], currentUserId));
+      !SECRET_DEFINITIONS.canApprove(group.definitionHistory[0], currentUserId);
     headerControls.appendChild(reviewButton);
   }
 
@@ -1751,14 +1748,13 @@ function findCurrentUserRecordByWord(word) {
   return sortRecordsByActivityDesc(matches)[0] || null;
 }
 
-async function handleDefinitionReview(word, approve) {
+async function handleApproveDefinition(word) {
   dictionaryRevision++;
   const group = getGroupByWord(word);
   const record = group && group.definitionHistory[0];
   if (!record || group.saveStatus !== "idle") return;
   await ensureCurrentUserIdentity();
-  if (approve && !SECRET_DEFINITIONS.canApprove(record, currentUserId)) return;
-  if (!approve && group.classification !== "defined") return;
+  if (!SECRET_DEFINITIONS.canApprove(record, currentUserId)) return;
   group.saveStatus = "saving-review";
   refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
   try {
@@ -1772,8 +1768,8 @@ async function handleDefinitionReview(word, approve) {
         SECRET_DEFINITIONS.classification(fresh) !== group.classification) {
       throw new Error("This definition changed. Refresh the dictionary before reviewing it.");
     }
-    if (approve && !SECRET_DEFINITIONS.canApprove(fresh, currentUserId)) return;
-    const definitionReview = { status: approve ? "defined" : "candidate",
+    if (!SECRET_DEFINITIONS.canApprove(fresh, currentUserId)) return;
+    const definitionReview = { status: "defined",
       reviewedBy: currentUserId, reviewedAt: Date.now() };
     const params = { TableName: awsConfig.heartsTableName,
       Item: { ...fresh, definitionReview },
@@ -1788,7 +1784,7 @@ async function handleDefinitionReview(word, approve) {
     }
     await client.put(params).promise();
     record.definitionReview = definitionReview;
-    activeFilter = approve ? FILTERS.DEFINED : FILTERS.CANDIDATE;
+    activeFilter = FILTERS.DEFINED;
     rebuildGroupsFromEntries();
   } catch (error) {
     console.error("Could not save definition review.", error);
@@ -2468,8 +2464,8 @@ async function handleDictionaryListClick(event) {
   const actionCard = actionButton && actionButton.closest(".dictionary-card");
   const actionWord = trimOrEmpty(actionCard && actionCard.dataset.word);
   if (actionButton && actionWord) {
-    if (["approve-definition", "reconsider-definition"].includes(actionButton.dataset.action)) {
-      await handleDefinitionReview(actionWord, actionButton.dataset.action === "approve-definition");
+    if (actionButton.dataset.action === "approve-definition") {
+      await handleApproveDefinition(actionWord);
       return;
     }
     if (actionButton.dataset.action === "open-word-editor") {
