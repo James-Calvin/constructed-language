@@ -8,10 +8,10 @@ This document tracks the agreed feature backlog. Mark an item `[x]` when its beh
 
 ## Candidates, approval, and shared hearts
 
-- [ ] Add a Candidate section for newly defined words. Preserve all existing defined words in the Defined category when introducing this workflow.
-- [ ] Allow a different user to approve a candidate, moving it into Defined. A word's defining user cannot supply its second-person approval.
-- [ ] Add an action to return an accepted Defined word to Candidate for reconsideration.
-- [ ] Render words hearted by multiple distinct users in sunrise yellow. Keep hearts as personal preferences, with approval as an explicit action.
+- [x] Add a Candidate section for newly defined words. Preserve all existing defined words in the Defined category when introducing this workflow.
+- [x] Allow a different user to approve a candidate, moving it into Defined. A word's defining user cannot supply its second-person approval.
+- [x] Add an action to return an accepted Defined word to Candidate for reconsideration.
+- [x] Render words hearted by multiple distinct users in sunrise yellow. Keep hearts as personal preferences, with approval as an explicit action.
 
 ## Word notes
 

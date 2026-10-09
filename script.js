@@ -828,12 +828,8 @@ async function putCurrentUserRecord(state) {
   }
   state.updatedTimestamp = now;
 
-  await currentHeartsTableClient
-    .put({
-      TableName: awsConfig.heartsTableName,
-      Item: buildHeartTableItem(state)
-    })
-    .promise();
+  await SECRET_DEFINITIONS.save(currentHeartsTableClient,
+    awsConfig.heartsTableName, buildHeartTableItem(state));
 
   state.hasPersistedRecord = true;
 }
@@ -1415,6 +1411,10 @@ async function hydrateWordState(rowId) {
     }
 
     applyCurrentUserMatchToState(currentState, lookup.currentUserMatch);
+    currentState.otherHeartUsers = [...new Set(lookup.matches
+      .filter(item => item.hearted && SECRET_DEFINITIONS.namedUserId(item.user) &&
+        SECRET_DEFINITIONS.namedUserId(item.user) !== SECRET_DEFINITIONS.namedUserId(getCurrentUserId()))
+      .map(item => SECRET_DEFINITIONS.namedUserId(item.user)))];
     syncDisplayMeaning(currentState, lookup.latestImportedMeaningMatch || lookup.latestMeaningMatch);
     renderRow(rowId);
     flushPersistedRowsSave();
@@ -1501,6 +1501,15 @@ function renderRow(rowId) {
   if (sharedUi.deferEditorRender(row, () => renderRow(rowId))) return;
 
   row.classList.toggle("is-selected", selectedRowId === rowId);
+  const wordLabel = row.querySelector(".word");
+  if (wordLabel) {
+    const sharedHearts = SECRET_DEFINITIONS.sharedHearts([
+      ...(state.otherHeartUsers || []).map(user => ({ user, hearted: true })),
+      { user: getCurrentUserId(), hearted: state.hearted }
+    ]);
+    wordLabel.classList.toggle("has-shared-hearts", sharedHearts);
+    wordLabel.title = sharedHearts ? "Hearted by multiple named users" : "";
+  }
 
   const heartButton = row.querySelector(".heart-btn");
   if (heartButton) {

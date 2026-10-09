@@ -2,17 +2,20 @@ const COPY_FEEDBACK_MS = 1200;
 const DICTIONARY_BATCH_SIZE = 30;
 
 const FILTERS = {
+  CANDIDATE: "candidate",
   DEFINED: "defined",
   UNDEFINED: "undefined",
   ALL: "all"
 };
 
 const GROUP_CLASSIFICATIONS = {
+  CANDIDATE: "candidate",
   DEFINED: "defined",
   UNDEFINED: "undefined"
 };
 
 const EMPTY_STATUS_BY_FILTER = {
+  [FILTERS.CANDIDATE]: "No candidates awaiting approval.",
   [FILTERS.DEFINED]: "No defined words yet.",
   [FILTERS.UNDEFINED]: "No undefined saved words yet.",
   [FILTERS.ALL]: "No saved words yet."
@@ -219,7 +222,7 @@ function sortRecordsByDefinitionDesc(records) {
 }
 
 function isValidFilter(filter) {
-  return filter === FILTERS.DEFINED || filter === FILTERS.UNDEFINED || filter === FILTERS.ALL;
+  return Object.values(FILTERS).includes(filter);
 }
 
 function getEmptyStatusMessage(filter = activeFilter) {
@@ -227,7 +230,7 @@ function getEmptyStatusMessage(filter = activeFilter) {
 }
 
 function getGroupStatusLabel(classification) {
-  return classification === GROUP_CLASSIFICATIONS.UNDEFINED ? "Undefined" : "Defined";
+  return classification === "candidate" ? "Candidate" : classification === "undefined" ? "Undefined" : "Defined";
 }
 
 function getDefinitionAuthorLabel(record) {
@@ -462,6 +465,7 @@ function normalizeDictionaryEntry(rawItem) {
     timestamp,
     updatedTimestamp,
     meaningUpdatedTimestamp,
+    definitionReview: rawItem.definitionReview || null,
     unheartedTimestamp: rawUnheartedTimestamp > 0 ? rawUnheartedTimestamp : null,
     user: trimOrEmpty(rawItem.user),
     word,
@@ -483,6 +487,7 @@ function buildDictionaryTableItem(record) {
     hearted: Boolean(record.hearted),
     updatedTimestamp: record.updatedTimestamp,
     meaningUpdatedTimestamp: record.meaningUpdatedTimestamp ?? null,
+    definitionReview: record.definitionReview || null,
     unheartedTimestamp: record.unheartedTimestamp ?? null
   };
 }
@@ -511,11 +516,12 @@ async function scanDictionaryEntries() {
           "#timestamp": "timestamp",
           "#updatedTimestamp": "updatedTimestamp",
           "#meaningUpdatedTimestamp": "meaningUpdatedTimestamp",
+          "#definitionReview": "definitionReview",
           "#user": "user",
           "#unheartedTimestamp": "unheartedTimestamp"
         },
         ProjectionExpression:
-          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #user, #unheartedTimestamp",
+          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #definitionReview, #user, #unheartedTimestamp",
         ExclusiveStartKey: lastEvaluatedKey
       })
       .promise();
@@ -561,7 +567,7 @@ function isGroupVisible(group) {
     return true;
   }
 
-  return group.classification === GROUP_CLASSIFICATIONS.DEFINED;
+  return group.classification === activeFilter;
 }
 
 function rebuildGroupsFromEntries() {
@@ -613,10 +619,8 @@ function rebuildGroupsFromEntries() {
       currentUserRecord,
       hasCurrentUserHeart: Boolean(currentUserRecord && currentUserRecord.hearted),
       isDictionaryVisible,
-      classification:
-        definitionHistory.length > 0
-          ? GROUP_CLASSIFICATIONS.DEFINED
-          : GROUP_CLASSIFICATIONS.UNDEFINED,
+      classification: SECRET_DEFINITIONS.classification(definitionHistory[0]),
+      sharedHearts: SECRET_DEFINITIONS.sharedHearts(sortedRecords),
       expanded: Boolean(previousGroup && previousGroup.expanded),
       draftMeaning,
       hasDraftCache:
@@ -649,6 +653,7 @@ function rebuildVisibleGroups() {
 function getFilterCounts() {
   const sourceGroups = showOnlyMyHearts ? groups.filter((group) => group.hasCurrentUserHeart) : groups;
   let definedCount = 0;
+  let candidateCount = 0;
   let undefinedCount = 0;
 
   for (const group of sourceGroups) {
@@ -658,6 +663,8 @@ function getFilterCounts() {
 
     if (group.classification === GROUP_CLASSIFICATIONS.UNDEFINED) {
       undefinedCount += 1;
+    } else if (group.classification === GROUP_CLASSIFICATIONS.CANDIDATE) {
+      candidateCount += 1;
     } else {
       definedCount += 1;
     }
@@ -665,8 +672,9 @@ function getFilterCounts() {
 
   return {
     [FILTERS.DEFINED]: definedCount,
+    [FILTERS.CANDIDATE]: candidateCount,
     [FILTERS.UNDEFINED]: undefinedCount,
-    [FILTERS.ALL]: definedCount + undefinedCount
+    [FILTERS.ALL]: definedCount + undefinedCount + candidateCount
   };
 }
 
@@ -1204,7 +1212,7 @@ function createWordManagementActions(group) {
   editButton.disabled = group.saveStatus !== "idle";
   actions.appendChild(editButton);
 
-  if (group.classification === GROUP_CLASSIFICATIONS.DEFINED) {
+  if (group.classification !== GROUP_CLASSIFICATIONS.UNDEFINED) {
     const undefineButton = document.createElement("button");
     undefineButton.type = "button";
     undefineButton.className = "dictionary-word-action";
@@ -1244,6 +1252,10 @@ function createGroupCard(group) {
 
   const title = document.createElement("span");
   title.className = "dictionary-word-title";
+  if (group.sharedHearts) {
+    title.classList.add("has-shared-hearts");
+    title.title = "Hearted by multiple named users";
+  }
   title.textContent = group.word;
 
   const badge = document.createElement("span");
@@ -1252,7 +1264,7 @@ function createGroupCard(group) {
 
   wordMeta.append(title, badge);
 
-  if (group.classification === GROUP_CLASSIFICATIONS.DEFINED && group.definitionHistory[0]) {
+  if (group.definitionHistory[0]) {
     const author = document.createElement("span");
     author.className = "dictionary-definition-author";
     author.textContent = `Last defined by ${getDefinitionAuthorLabel(group.definitionHistory[0])}`;
@@ -1262,6 +1274,21 @@ function createGroupCard(group) {
 
   const headerControls = document.createElement("div");
   headerControls.className = "dictionary-card-header-controls";
+
+  if (group.classification !== GROUP_CLASSIFICATIONS.UNDEFINED) {
+    const reviewButton = document.createElement("button");
+    reviewButton.type = "button";
+    reviewButton.className = "dictionary-word-action";
+    const candidate = group.classification === GROUP_CLASSIFICATIONS.CANDIDATE;
+    const ownDefinition = group.definitionHistory[0].user === currentUserId;
+    reviewButton.dataset.action = candidate ? "approve-definition" : "reconsider-definition";
+    reviewButton.textContent = candidate
+      ? (ownDefinition ? "Awaiting another user's approval" : "Approve definition")
+      : "Return to candidate";
+    reviewButton.disabled = group.saveStatus !== "idle" ||
+      (candidate && !SECRET_DEFINITIONS.canApprove(group.definitionHistory[0], currentUserId));
+    headerControls.appendChild(reviewButton);
+  }
 
   if (selectedWord === group.word) {
     headerControls.appendChild(createWordManagementActions(group));
@@ -1703,6 +1730,56 @@ function findCurrentUserRecordByWord(word) {
   return sortRecordsByActivityDesc(matches)[0] || null;
 }
 
+async function handleDefinitionReview(word, approve) {
+  const group = getGroupByWord(word);
+  const record = group && group.definitionHistory[0];
+  if (!record || group.saveStatus !== "idle") return;
+  await ensureCurrentUserIdentity();
+  if (approve && !SECRET_DEFINITIONS.canApprove(record, currentUserId)) return;
+  if (!approve && group.classification !== "defined") return;
+  group.saveStatus = "saving-review";
+  refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+  try {
+    const client = getHeartsTableClient();
+    const key = { rowId: record.rowId, timestamp: record.timestamp };
+    const response = await client.get({ TableName: awsConfig.heartsTableName,
+      Key: key, ConsistentRead: true }).promise();
+    const fresh = response.Item;
+    if (!fresh || fresh.meaning !== record.meaning ||
+        fresh.meaningUpdatedTimestamp !== record.meaningUpdatedTimestamp ||
+        SECRET_DEFINITIONS.classification(fresh) !== group.classification) {
+      throw new Error("This definition changed. Refresh the dictionary before reviewing it.");
+    }
+    if (approve && !SECRET_DEFINITIONS.canApprove(fresh, currentUserId)) return;
+    const definitionReview = { status: approve ? "defined" : "candidate",
+      reviewedBy: currentUserId, reviewedAt: Date.now() };
+    const params = { TableName: awsConfig.heartsTableName,
+      Item: { ...fresh, definitionReview },
+      ConditionExpression: "#updated = :updated AND (attribute_not_exists(#review) OR #review = :review)",
+      ExpressionAttributeNames: { "#updated": "updatedTimestamp", "#review": "definitionReview" },
+      ExpressionAttributeValues: { ":updated": fresh.updatedTimestamp,
+        ":review": fresh.definitionReview || null }
+    };
+    if (fresh.updatedTimestamp == null) {
+      params.ConditionExpression = "attribute_not_exists(#updated) AND (attribute_not_exists(#review) OR #review = :review)";
+      delete params.ExpressionAttributeValues[":updated"];
+    }
+    await client.put(params).promise();
+    record.definitionReview = definitionReview;
+    activeFilter = approve ? FILTERS.DEFINED : FILTERS.CANDIDATE;
+    rebuildGroupsFromEntries();
+  } catch (error) {
+    console.error("Could not save definition review.", error);
+    window.alert(error.code === "ConditionalCheckFailedException"
+      ? "This word changed while you were reviewing it. Refresh and try again."
+      : `Could not save review: ${error.message}`);
+  } finally {
+    const current = getGroupByWord(word);
+    if (current) current.saveStatus = "idle";
+    refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+  }
+}
+
 async function putDictionaryRecord(record) {
   const currentHeartsClient = getHeartsTableClient();
   if (!isDictionaryConfigured || !currentHeartsClient) {
@@ -1711,12 +1788,8 @@ async function putDictionaryRecord(record) {
 
   await ensureCurrentUserIdentity();
 
-  await currentHeartsClient
-    .put({
-      TableName: awsConfig.heartsTableName,
-      Item: buildDictionaryTableItem(record)
-    })
-    .promise();
+  record.definitionReview = await SECRET_DEFINITIONS.save(currentHeartsClient,
+    awsConfig.heartsTableName, buildDictionaryTableItem(record));
 }
 
 async function deleteDictionaryRecord(record) {
@@ -2039,6 +2112,7 @@ async function handleSaveMeaning(word) {
     rebuildGroupsFromEntries();
     const nextGroup = getGroupByWord(word);
     if (nextGroup) {
+      activeFilter = nextGroup.classification;
       nextGroup.draftMeaning = trimmedMeaning;
       nextGroup.hasDraftCache = true;
       nextGroup.isEditing = false;
@@ -2136,9 +2210,7 @@ async function handleSaveManualWord() {
     const nextGroup = getGroupByWord(word);
     if (nextGroup && !isGroupVisible(nextGroup)) {
       activeFilter =
-        nextGroup.classification === GROUP_CLASSIFICATIONS.UNDEFINED
-          ? FILTERS.UNDEFINED
-          : FILTERS.DEFINED;
+        nextGroup.classification;
     }
 
     selectedWord = word;
@@ -2363,6 +2435,10 @@ async function handleDictionaryListClick(event) {
   const actionCard = actionButton && actionButton.closest(".dictionary-card");
   const actionWord = trimOrEmpty(actionCard && actionCard.dataset.word);
   if (actionButton && actionWord) {
+    if (["approve-definition", "reconsider-definition"].includes(actionButton.dataset.action)) {
+      await handleDefinitionReview(actionWord, actionButton.dataset.action === "approve-definition");
+      return;
+    }
     if (actionButton.dataset.action === "open-word-editor") {
       openWordEditor(actionWord);
       return;

@@ -1644,6 +1644,18 @@ h2 {
   border: 1px solid transparent;
 }
 
+.dictionary-word-title.has-shared-hearts,
+.word.has-shared-hearts {
+  color: #ffc857;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.dictionary-status-badge.is-candidate {
+  color: #ffc857;
+  background: rgba(255, 200, 87, 0.12);
+  border-color: rgba(255, 200, 87, 0.4);
+}
+
 .dictionary-status-badge.is-defined {
   color: #7fc8ff;
   background: rgba(0, 153, 255, 0.12);
