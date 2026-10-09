@@ -42,6 +42,14 @@ let groups = [];
 let visibleGroups = [];
 let activeFilter = FILTERS.DEFINED;
 let currentUserId = "";
+let wordNotes;
+
+function getWordNotes() {
+  if (!wordNotes) wordNotes = SECRET_WORD_NOTES.create({
+    client: getHeartsTableClient, table: awsConfig.heartsTableName, user: () => currentUserId
+  });
+  return wordNotes;
+}
 let showOnlyMyHearts = false;
 let selectedWord = "";
 let playingRecordId = "";
@@ -517,11 +525,12 @@ async function scanDictionaryEntries() {
           "#updatedTimestamp": "updatedTimestamp",
           "#meaningUpdatedTimestamp": "meaningUpdatedTimestamp",
           "#definitionReview": "definitionReview",
+          "#noteData": "noteData",
           "#user": "user",
           "#unheartedTimestamp": "unheartedTimestamp"
         },
         ProjectionExpression:
-          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #definitionReview, #user, #unheartedTimestamp",
+          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #definitionReview, #noteData, #user, #unheartedTimestamp",
         ExclusiveStartKey: lastEvaluatedKey
       })
       .promise();
@@ -1316,7 +1325,7 @@ function createGroupCard(group) {
     const warning = document.createElement("p");
     warning.className = "dictionary-delete-warning";
     warning.setAttribute("role", "alert");
-    warning.textContent = "This permanently deletes every saved record and removes every user's heart for this word. Click Confirm delete to continue.";
+    warning.textContent = "This permanently deletes every saved record, all notes, and every user's heart for this word. Click Confirm delete to continue.";
     card.appendChild(warning);
   }
 
@@ -1325,6 +1334,7 @@ function createGroupCard(group) {
   }
 
   card.appendChild(main);
+  card.appendChild(getWordNotes().render(group.word));
 
   if (historyEntries.length > 0) {
     const history = document.createElement("div");
@@ -1861,6 +1871,7 @@ async function handleSaveWordEdit(word) {
       snapshot.record.updatedTimestamp = now;
     }
     await Promise.all(snapshots.map(({ record }) => putDictionaryRecord(record)));
+    await getWordNotes().rename(word, nextWord);
 
     resetWordEditor();
     wordEditorState.deleteConfirmationWord = "";
@@ -1948,6 +1959,7 @@ async function handleDeleteWord(word) {
   try {
     await ensureAwsCredentials();
     await Promise.all(recordsToDelete.map((record) => deleteDictionaryRecord(record)));
+    await getWordNotes().remove(word);
     for (const record of recordsToDelete) {
       clearCopyFeedback(record.id);
       recordsById.delete(record.id);
@@ -2595,6 +2607,7 @@ async function loadDictionary() {
   try {
     await ensureCurrentUserIdentity();
     const rawItems = await scanDictionaryEntries();
+    getWordNotes().load(rawItems);
 
     recordsById.clear();
     for (const rawItem of rawItems) {

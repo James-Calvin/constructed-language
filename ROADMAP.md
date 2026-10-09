@@ -15,8 +15,8 @@ This document tracks the agreed feature backlog. Mark an item `[x]` when its beh
 
 ## Word notes
 
-- [ ] Add optional per-word notes with author and date, hidden in a collapsed area by default.
-- [ ] Show a small filled red heart as the unread-notes notification on a word. Track which notes each user has read, and clear the notification when they view those notes.
+- [x] Add optional per-word notes with author and date, hidden in a collapsed area by default.
+- [x] Show a small filled red heart as the unread-notes notification on a word. Track which notes each user has read, and clear the notification when they view those notes.
 
 ## Roots and related words
 

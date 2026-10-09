@@ -1613,6 +1613,76 @@ h2 {
   color: #ff9ca5;
 }
 
+.word-notes {
+  margin-top: 0.65rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.word-notes > summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.word-notes-unread {
+  color: #f04452;
+  margin-left: 0.4rem;
+  font-size: 0.7rem;
+  vertical-align: middle;
+}
+
+.word-notes-unread[hidden] {
+  display: none;
+}
+
+.word-notes-list {
+  padding-left: 1.3rem;
+  margin: 0.6rem 0;
+}
+
+.word-notes-list li + li {
+  margin-top: 0.7rem;
+}
+
+.word-notes-list p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-main);
+  margin: 0.2rem 0;
+}
+
+.word-notes-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  min-height: 3.6rem;
+  margin: 0.6rem 0;
+  padding: 0.55rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-main);
+  font: inherit;
+}
+
+.word-notes-input:focus-visible,
+.word-notes > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.word-notes-status {
+  color: #ff9ca5;
+  margin: 0.35rem 0;
+}
+
+.word-notes-status:empty {
+  display: none;
+}
+
 .dictionary-word-meta {
   display: flex;
   align-items: center;
