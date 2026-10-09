@@ -690,6 +690,7 @@ function updateSentinelVisibility() {
 }
 
 function renderManualComposer() {
+  if (dictionaryComposer && sharedUi.deferEditorRender(dictionaryComposer, renderManualComposer)) return;
   if (addWordButton) {
     addWordButton.setAttribute("aria-expanded", manualComposerState.isOpen ? "true" : "false");
     addWordButton.classList.toggle("is-active", manualComposerState.isOpen);
@@ -967,10 +968,6 @@ function renderRecordMeaning(row, group, record, isHistoryEntry) {
     editor.append(input, saveButton, cancelButton);
     container.appendChild(editor);
 
-    window.requestAnimationFrame(() => {
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-    });
     return;
   }
 
@@ -1098,6 +1095,8 @@ function openWordEditor(word) {
   updateWordEditorDerivation(group.word);
   selectedWord = group.word;
   refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: group.word });
+  const spellingInput = dictionaryList.querySelector("[data-word-edit-field='spelling']");
+  if (spellingInput) spellingInput.focus();
 }
 
 function closeWordEditor() {
@@ -1325,7 +1324,9 @@ function renderDictionary(preserveCount = 0) {
   if (!dictionaryList) {
     return;
   }
+  if (sharedUi.deferEditorRender(dictionaryList, () => renderDictionary(preserveCount))) return;
 
+  const savedEditor = sharedUi.captureEditor(dictionaryList);
   dictionaryList.textContent = "";
   renderedGroupCount = 0;
 
@@ -1340,6 +1341,7 @@ function renderDictionary(preserveCount = 0) {
       : Math.min(visibleGroups.length, DICTIONARY_BATCH_SIZE);
 
   appendGroupCards(initialCount);
+  sharedUi.restoreEditor(dictionaryList, savedEditor);
 }
 
 function renderNextGroupBatch() {
@@ -1607,6 +1609,9 @@ function openMeaningEditor(word) {
   group.isEditing = true;
   selectedWord = word;
   refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
+  const card = Array.from(dictionaryList.children).find((item) => item.dataset.word === word);
+  const input = card && card.querySelector(".meaning-input");
+  if (input) input.focus();
 }
 
 function closeMeaningEditor(word) {
@@ -2181,18 +2186,21 @@ function handleWordEditorInput(event) {
   }
 
   if (input.dataset.wordEditField === "spelling") {
+    if (event.isComposing) { wordEditorState.spelling = input.value; return; }
     updateWordEditorDerivation(input.value);
-    refreshDictionaryView({
-      preserveCount: renderedGroupCount,
-      preferredWord: wordEditorState.word
-    });
-    window.requestAnimationFrame(() => {
-      const nextInput = document.querySelector("[data-word-edit-field='spelling']");
-      if (nextInput) {
-        nextInput.focus();
-        nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length);
-      }
-    });
+    const editor = input.closest(".dictionary-word-editor");
+    editor.querySelector("[data-word-edit-field='pronunciation']").value = wordEditorState.pronunciation;
+    let warnings = editor.querySelector(".dictionary-word-editor-warnings");
+    if (!warnings) {
+      warnings = document.createElement("ul");
+      warnings.className = "dictionary-word-editor-warnings";
+      editor.appendChild(warnings);
+    }
+    warnings.replaceChildren(...wordEditorState.warnings.map((message) => {
+      const item = document.createElement("li"); item.textContent = message; return item;
+    }));
+    const error = editor.querySelector(".dictionary-word-editor-error");
+    if (error) error.remove();
     return;
   }
 
@@ -2242,6 +2250,7 @@ function handleManualComposerInput(event) {
 
   if (target.id === "dictionaryComposerWord") {
     manualComposerState.word = target.value;
+    if (event.isComposing) return;
     const derivation = derivePronunciationFromSpelling({
       spelling: manualComposerState.word,
       config: loadActiveRuleConfig()
@@ -2543,12 +2552,14 @@ if (addWordButton) {
 }
 
 if (dictionaryComposer) {
+  dictionaryComposer.addEventListener("compositionend", handleManualComposerInput);
   dictionaryComposer.addEventListener("click", handleManualComposerClick);
   dictionaryComposer.addEventListener("input", handleManualComposerInput);
   dictionaryComposer.addEventListener("keydown", handleManualComposerKeydown);
 }
 
 if (dictionaryList) {
+  dictionaryList.addEventListener("compositionend", handleWordEditorInput);
   dictionaryList.addEventListener("click", (event) => {
     void handleDictionaryListClick(event);
   });

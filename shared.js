@@ -293,6 +293,43 @@
     };
   }
 
+  let composingField = null;
+  document.addEventListener("compositionstart", (event) => { composingField = event.target; });
+  document.addEventListener("compositionend", () => { composingField = null; });
+  const deferredEditors = new WeakMap();
+  function deferEditorRender(root, callback) {
+    if (!composingField || !root.contains(composingField)) return false;
+    deferredEditors.set(root, callback);
+    composingField.addEventListener("compositionend", () => {
+      globalScope.setTimeout(() => {
+        const pending = deferredEditors.get(root);
+        deferredEditors.delete(root);
+        if (pending) pending();
+      }, 0);
+    }, { once: true });
+    return true;
+  }
+
+  function captureEditor(root) {
+    const field = document.activeElement;
+    if (!field || !root.contains(field) || !field.matches("input, textarea, select")) return null;
+    const fields = Array.from(root.querySelectorAll("input, textarea, select"));
+    return { index: fields.indexOf(field), start: field.selectionStart, end: field.selectionEnd,
+      direction: field.selectionDirection, top: field.scrollTop, left: field.scrollLeft };
+  }
+
+  function restoreEditor(root, saved) {
+    if (!saved) return;
+    const field = root.querySelectorAll("input, textarea, select")[saved.index];
+    if (!field || field.disabled) return;
+    field.focus({ preventScroll: true });
+    if (saved.start !== null && saved.start !== undefined) {
+      field.setSelectionRange(saved.start, saved.end, saved.direction || "none");
+    }
+    field.scrollTop = saved.top;
+    field.scrollLeft = saved.left;
+  }
+
   globalScope.LOVE_LANGUAGE_SHARED = {
     utils: {
       trimOrEmpty,
@@ -305,6 +342,9 @@
       escapeXml
     },
     ui: {
+      deferEditorRender,
+      captureEditor,
+      restoreEditor,
       createActionButton,
       copyTextToClipboard,
       buildCopyPayload

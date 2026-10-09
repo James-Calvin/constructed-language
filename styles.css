@@ -252,6 +252,12 @@ h2 {
   transition: transform 0.12s ease, background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+.prefix-options { margin: 0 0 1.2rem; color: var(--text-muted); }
+.prefix-options summary { cursor: pointer; margin-bottom: 0.6rem; }
+.prefix-options label { display: block; margin-bottom: 0.35rem; }
+.prefix-options input { width: 100%; padding: 0.6rem; font: inherit; color: var(--text-main); background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; }
+.prefix-options p { font-size: 0.85rem; margin: 0.4rem 0; }
+
 .generate-btn:hover {
   background: var(--accent-hover);
   box-shadow: 0 0 0 3px rgba(0, 153, 255, 0.24);

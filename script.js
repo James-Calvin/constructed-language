@@ -31,6 +31,8 @@ const minInput = document.getElementById("minSyllables");
 const maxInput = document.getElementById("maxSyllables");
 const generateBtn = document.getElementById("generateBtn");
 const generationStatus = document.getElementById("generationStatus");
+const wordPrefixInput = document.getElementById("wordPrefix");
+const prefixStatus = document.getElementById("prefixStatus");
 const clearAllBtn = document.getElementById("clearAllBtn");
 const resultsList = document.getElementById("results");
 
@@ -409,6 +411,12 @@ function setGenerationStatus(message, isError = true) {
 
 function syncGenerationAvailability(min, max) {
   ruleConfigCompatibility = evaluateRuleConfigCompatibility(activeRuleConfig, min, max);
+  if (prefixStatus) prefixStatus.textContent = "";
+  if (ruleConfigCompatibility.isReady && wordPrefixInput.value.trim()) {
+    const prefixValidation = window.SECRET_PREFIX_GENERATOR.search(activeRuleConfig, wordPrefixInput.value, min, max);
+    prefixStatus.textContent = prefixValidation.message || "";
+    if (!prefixValidation.ready) ruleConfigCompatibility = { isReady: false, message: prefixValidation.message };
+  }
 
   if (generateBtn) {
     generateBtn.disabled = !ruleConfigCompatibility.isReady;
@@ -1467,10 +1475,6 @@ function renderMeaning(row, state) {
     editor.append(input, saveButton, cancelButton);
     container.appendChild(editor);
 
-    window.requestAnimationFrame(() => {
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-    });
     return;
   }
 
@@ -1493,6 +1497,8 @@ function renderRow(rowId) {
   if (!state || !row) {
     return;
   }
+
+  if (sharedUi.deferEditorRender(row, () => renderRow(rowId))) return;
 
   row.classList.toggle("is-selected", selectedRowId === rowId);
 
@@ -1518,7 +1524,9 @@ function renderRow(rowId) {
     playButton.textContent = isPlaying ? "■" : playButton.dataset.icon;
   }
 
+  const savedEditor = sharedUi.captureEditor(row);
   renderMeaning(row, state);
+  sharedUi.restoreEditor(row, savedEditor);
 }
 
 function clearCopyFeedback(rowId) {
@@ -1656,6 +1664,9 @@ function openMeaningEditor(rowId) {
 
   state.isEditing = true;
   renderRow(rowId);
+  const row = resultsList.querySelector(`[data-row-id="${rowId}"]`);
+  const input = row && row.querySelector(".meaning-input");
+  if (input) input.focus();
 }
 
 function closeMeaningEditor(rowId) {
@@ -1848,6 +1859,11 @@ function buildWord(min, max) {
 }
 
 function generateUniqueWord(min, max) {
+  if (wordPrefixInput.value.trim()) {
+    const result = window.SECRET_PREFIX_GENERATOR.search(activeRuleConfig, wordPrefixInput.value,
+      min, max, true, generatedWords);
+    return result.candidate ? { ...result.candidate, rowId: createRowId(), timestamp: Date.now() } : null;
+  }
   for (let attempt = 0; attempt < RETRY_LIMIT; attempt += 1) {
     const candidate = buildWord(min, max);
     if (candidate && !generatedWords.has(candidate.word)) {
@@ -1903,7 +1919,9 @@ function addResult() {
   const generated = generateUniqueWord(min, max);
 
   if (!generated) {
-    setGenerationStatus("Could not generate a unique word with the current rules.");
+    setGenerationStatus(wordPrefixInput.value.trim()
+      ? "All valid words for this prefix are already in the generated list. Clear the list or change the prefix."
+      : "Could not generate a unique word with the current rules.");
     return;
   }
 
@@ -2032,6 +2050,7 @@ window.addEventListener("storage", handleStorageSync);
 window.addEventListener("secret-rules-imported", reloadActiveGeneratorRules);
 
 minInput.addEventListener("change", clampSyllables);
+wordPrefixInput.addEventListener("input", () => clampSyllables(false));
 maxInput.addEventListener("change", clampSyllables);
 if (generateBtn) {
   generateBtn.addEventListener("click", addResult);

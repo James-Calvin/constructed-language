@@ -498,6 +498,7 @@
     pendingFocusRowId = "";
     pendingFocusFieldName = "";
     globalScope.requestAnimationFrame(() => {
+      if (document.activeElement && document.activeElement.matches("input, textarea, select")) return;
       const row = app.querySelector(`[data-row-id="${rowId}"]`);
       const focusTarget =
         row && fieldName
@@ -933,6 +934,8 @@
   }
 
   function renderAll() {
+    if (sharedApi.ui.deferEditorRender(app, renderAll)) return;
+    const savedEditor = sharedApi.ui.captureEditor(app);
     renderInventoryList("vowels", vowelsList);
     renderInventoryList("consonants", consonantsList);
     renderPatternGrid();
@@ -943,7 +946,13 @@
     renderStatus();
     syncSelectedDisplayRows();
     syncPendingDeleteButtons();
-    applyPendingFocus();
+    if (savedEditor) {
+      pendingFocusRowId = "";
+      pendingFocusFieldName = "";
+      sharedApi.ui.restoreEditor(app, savedEditor);
+    } else {
+      applyPendingFocus();
+    }
   }
 
   function openRowEditor(rowId) {
