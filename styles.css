@@ -1568,6 +1568,86 @@ h2 {
   outline-offset: 2px;
 }
 
+.page-nav.dictionary-page-nav {
+  justify-content: space-between;
+  flex-wrap: nowrap;
+}
+
+.dictionary-page-nav a:last-child {
+  margin-left: auto;
+  text-align: right;
+}
+
+.concept-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+}
+
+.concept-checkbox input[type="checkbox"] {
+  width: auto;
+}
+
+.concept-management {
+  margin: 0.6rem 0;
+}
+
+.concept-management > button + button,
+.definition-picker button + button,
+.row-meaning > .meaning-link + .meaning-link {
+  margin-left: 0.6rem;
+}
+
+.concept-management [hidden] {
+  display: none;
+}
+
+.concept-edit-form {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.concept-edit-form textarea,
+.definition-picker select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-main);
+  font: inherit;
+}
+
+.concept-edit-form textarea {
+  resize: vertical;
+}
+
+.concept-match-list {
+  padding-left: 1.3rem;
+}
+
+.concept-match-definition {
+  margin: 0.3rem 0 0.6rem;
+  overflow-wrap: anywhere;
+}
+
+.definition-picker {
+  margin: 0.7rem 0;
+}
+
+.definition-picker label {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+
+.definition-picker p {
+  color: #ffd97a;
+  font-size: 0.85rem;
+}
+
 .dictionary-search { margin-bottom: 1rem; }
 .dictionary-search label { display: block; margin-bottom: 0.4rem; color: var(--text-muted); font-size: 0.9rem; }
 .dictionary-search input { width: 100%; min-width: 0; padding: 0.65rem 0.8rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); color: var(--text-main); font: inherit; }

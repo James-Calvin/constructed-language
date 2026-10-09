@@ -43,10 +43,13 @@ async function testPersistence() {
   assert.ok(writes[0].ConditionExpression.includes('#review'));
   await workflow.save(client, 'secretWords', { ...item, meaning: 'light', meaningUpdatedTimestamp: 14 });
   assert.equal(writes[1].Item.definitionReview.status, 'candidate');
+  delete previous.conceptData;
+  await workflow.save(client, 'secretWords', { ...item, conceptData: { id: 'deleted-request' } });
+  assert.equal(writes[2].Item.conceptData, undefined, 'A stale heart save cannot resurrect a deleted request');
   previous = undefined;
   await workflow.save(client, 'secretWords', { rowId: 'bob::sky', timestamp: 2, meaning: 'sky' });
-  assert.equal(writes[2].ConditionExpression, 'attribute_not_exists(rowId)');
-  assert.equal(writes[2].Item.definitionReview.status, 'candidate');
+  assert.equal(writes[3].ConditionExpression, 'attribute_not_exists(rowId)');
+  assert.equal(writes[3].Item.definitionReview.status, 'candidate');
   console.log('Definition workflow tests passed.');
 }
 testPersistence().catch(error => { console.error(error); process.exitCode = 1; });

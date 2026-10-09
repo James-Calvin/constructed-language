@@ -20,7 +20,10 @@
       Key: { rowId: item.rowId, timestamp: item.timestamp }, ConsistentRead: true }).promise();
     item.definitionReview = reviewForSave(item, result.Item);
     // Generator saves may not have loaded the request metadata from the index.
-    if (result.Item && result.Item.conceptData) item.conceptData = result.Item.conceptData;
+    if (result.Item) {
+      if (result.Item.conceptData) item.conceptData = result.Item.conceptData;
+      else delete item.conceptData; // Do not resurrect a request removed on another device.
+    }
     const params = { TableName: table, Item: item };
     if (result.Item) {
       params.ConditionExpression = "#updated = :updated AND (attribute_not_exists(#review) OR #review = :review)";
@@ -32,6 +35,11 @@
         params.ConditionExpression = "attribute_not_exists(#updated) AND (attribute_not_exists(#review) OR #review = :review)";
         delete params.ExpressionAttributeValues[":updated"];
       }
+      // Request editing/removal must also win against a heart save already in flight.
+      params.ConditionExpression += result.Item.conceptData
+        ? " AND #concept = :concept" : " AND (attribute_not_exists(#concept) OR #concept = :concept)";
+      params.ExpressionAttributeNames["#concept"] = "conceptData";
+      params.ExpressionAttributeValues[":concept"] = result.Item.conceptData || null;
     } else {
       params.ConditionExpression = "attribute_not_exists(rowId)";
     }

@@ -45,6 +45,28 @@ let currentUserId = "";
 let wordNotes;
 let dictionaryRevision = 0;
 let dictionaryLoaded = false;
+let definitionPicker;
+
+function getDefinitionPicker() {
+  if (!definitionPicker) definitionPicker = SECRET_DEFINITION_PICKER.create({
+    client: getHeartsTableClient, table: awsConfig.heartsTableName, user: () => currentUserId,
+    read: async () => {
+      if (!await ensureAwsCredentials()) throw new Error("Database access is unavailable.");
+      return scanDictionaryEntries();
+    },
+    onMutation: () => { dictionaryRevision++; },
+    onChange: () => refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: selectedWord }),
+    onAssigned: item => {
+      const record = normalizeDictionaryEntry(item);
+      recordsById.set(record.id, record);
+      activeFilter = FILTERS.CANDIDATE;
+      selectedWord = item.word;
+      rebuildGroupsFromEntries();
+      refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: item.word });
+    }
+  });
+  return definitionPicker;
+}
 
 function getWordNotes() {
   if (!wordNotes) wordNotes = SECRET_WORD_NOTES.create({
@@ -1017,13 +1039,23 @@ function renderRecordMeaning(row, group, record, isHistoryEntry) {
   link.className = "meaning-link";
   link.dataset.action = "open-meaning-editor";
   link.textContent =
-    group.currentUserRecord && hasDefinedMeaning(group.currentUserRecord)
+    group.classification === GROUP_CLASSIFICATIONS.UNDEFINED
+      ? "Write a definition"
+      : group.currentUserRecord && hasDefinedMeaning(group.currentUserRecord)
       ? "Edit my meaning"
       : hasMeaningText(group.draftMeaning)
         ? "Edit my meaning"
-        : "Add my meaning";
+        : "Write a definition";
   link.disabled = group.saveStatus !== "idle";
   container.appendChild(link);
+  if (group.classification === GROUP_CLASSIFICATIONS.UNDEFINED) {
+    const select = document.createElement("button");
+    select.type = "button"; select.className = "meaning-link";
+    select.dataset.action = "select-definition";
+    select.textContent = "Select a definition";
+    select.disabled = group.saveStatus !== "idle";
+    container.appendChild(select);
+  }
 }
 
 function applyRecordRowState(row, group, record, isHistoryEntry) {
@@ -1127,6 +1159,7 @@ function updateWordEditorDerivation(spelling) {
 }
 
 function openWordEditor(word) {
+  if (!getDefinitionPicker().close()) return;
   const group = getGroupByWord(word);
   if (!group) {
     return;
@@ -1342,6 +1375,8 @@ function createGroupCard(group) {
   }
 
   card.appendChild(main);
+  const definitionSelection = getDefinitionPicker().render(group.word);
+  if (definitionSelection) card.appendChild(definitionSelection);
   card.appendChild(getWordNotes().render(group.word));
 
   if (historyEntries.length > 0) {
@@ -1651,6 +1686,7 @@ function toggleHistory(word) {
 }
 
 function openMeaningEditor(word) {
+  if (!getDefinitionPicker().close()) return;
   const group = getGroupByWord(word);
   if (!group) {
     return;
@@ -1695,6 +1731,7 @@ function resetManualComposer() {
 }
 
 function openManualComposer() {
+  if (!getDefinitionPicker().close()) return;
   manualComposerState.isOpen = true;
   manualComposerState.word = "";
   manualComposerState.pronunciation = "";
@@ -1821,10 +1858,17 @@ async function deleteDictionaryRecord(record) {
   await ensureCurrentUserIdentity();
   if (record.conceptData) {
     // Delete the word and its hearts, but return its desired concept to the wishlist.
-    await currentHeartsClient.put({ TableName: awsConfig.heartsTableName,
-      Item: { rowId: record.rowId, timestamp: record.timestamp, conceptData: record.conceptData }
-    }).promise();
-    return;
+    const response = await currentHeartsClient.get({ TableName: awsConfig.heartsTableName,
+      Key: { rowId: record.rowId, timestamp: record.timestamp }, ConsistentRead: true }).promise();
+    if (response.Item?.conceptData) {
+      await currentHeartsClient.put({ TableName: awsConfig.heartsTableName,
+        Item: { rowId: record.rowId, timestamp: record.timestamp, conceptData: response.Item.conceptData },
+        ConditionExpression: "#concept = :concept",
+        ExpressionAttributeNames: { "#concept": "conceptData" },
+        ExpressionAttributeValues: { ":concept": response.Item.conceptData }
+      }).promise();
+      return;
+    }
   }
   await currentHeartsClient
     .delete({
@@ -1958,6 +2002,7 @@ async function handleUndefineWord(word) {
 }
 
 async function handleDeleteWord(word) {
+  if (!getDefinitionPicker().close()) return;
   const group = getGroupByWord(word);
   if (!group) {
     return;
@@ -2464,6 +2509,17 @@ async function handleDictionaryListClick(event) {
   const actionCard = actionButton && actionButton.closest(".dictionary-card");
   const actionWord = trimOrEmpty(actionCard && actionCard.dataset.word);
   if (actionButton && actionWord) {
+    if (actionButton.dataset.action === "select-definition") {
+      const group = getGroupByWord(actionWord);
+      if (group && group.classification === GROUP_CLASSIFICATIONS.UNDEFINED) {
+        selectedWord = actionWord;
+        getDefinitionPicker().open(actionWord, group.pronunciation);
+        const card = [...dictionaryList.children].find(item => item.dataset.word === actionWord);
+        const pickerSelect = card && card.querySelector(".definition-picker select");
+        if (pickerSelect) pickerSelect.focus();
+      }
+      return;
+    }
     if (actionButton.dataset.action === "approve-definition") {
       await handleApproveDefinition(actionWord);
       return;
@@ -2601,7 +2657,7 @@ function handleAddWordButtonClick() {
 
 function dictionaryRefreshBusy() {
   const field = document.activeElement;
-  return !dictionaryLoaded || manualComposerState.isOpen || Boolean(wordEditorState.word) ||
+  return !dictionaryLoaded || getDefinitionPicker().isOpen() || manualComposerState.isOpen || Boolean(wordEditorState.word) ||
     Boolean(wordEditorState.deleteConfirmationWord) || groups.some(group => group.isEditing || group.saveStatus !== "idle") ||
     getWordNotes().isBusy() || Boolean(field && dictionaryList.contains(field) && field.matches("input, textarea, select"));
 }
@@ -2613,6 +2669,7 @@ function applyDictionarySnapshot(rawItems, background = true) {
   const anchorWord = anchor && anchor.dataset.word;
   const anchorTop = anchor && anchor.getBoundingClientRect().top;
   getWordNotes().load(rawItems);
+  getDefinitionPicker().load(rawItems);
   const previousRecords = new Map(recordsById);
   recordsById.clear();
   for (const rawItem of rawItems) {

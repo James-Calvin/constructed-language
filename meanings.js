@@ -15,6 +15,8 @@
   const refreshButton = document.getElementById("conceptRefresh");
   const cards = new Map();
   const generated = new Set();
+  const wordFilters = new Map();
+  let rawDictionaryItems = [];
   let words = [];
   let ready = false;
   let loading = false;
@@ -38,29 +40,44 @@
     return node;
   }
   function availableWords(raw) {
-    const grouped = new Map();
-    for (const item of raw) {
-      if (!item.word || !item.pronunciation) continue;
-      const previous = grouped.get(item.word);
-      const time = Number(item.meaningUpdatedTimestamp || item.updatedTimestamp || item.timestamp);
-      if (!previous || time > previous.time) grouped.set(item.word, { ...item, time });
-    }
-    return [...grouped.values()].sort((a, b) => a.word.localeCompare(b.word, undefined, { sensitivity: "base" }));
+    return SECRET_MEANING_REQUESTS.groupWords(raw);
   }
-  function populateWords(select) {
+  function populateWords(select, onlyUndefined = true) {
     const selected = select.value;
     select.replaceChildren();
     const placeholder = element("option", "", "Choose an existing word (optional)");
     placeholder.value = "";
     select.append(placeholder);
     for (const word of words) {
-      const option = element("option", "", `${word.word} /${word.pronunciation}/`);
+      if (onlyUndefined && word.hasDefinition) continue;
+      const definitions = word.definitions.map(definition => definition.meaning).join("; ");
+      const option = element("option", "", `${word.word} /${word.pronunciation}/${definitions ? ` — ${definitions}` : ""}`);
       option.value = word.word;
       select.append(option);
     }
-    select.value = selected;
+    select.value = [...select.children].some(option => option.value === selected) ? selected : "";
   }
-  function createCard(request) {
+  function updateMatches(view) {
+    if (!view.matches) return;
+    const matches = SECRET_MEANING_REQUESTS.matchesForConcept(view.request.conceptData.text, words);
+    view.matches.replaceChildren();
+    view.matches.hidden = matches.length === 0;
+    if (!matches.length) return;
+    view.matches.append(element("p", "concept-help", "Existing definitions that may fit:"));
+    const list = element("ul", "concept-match-list");
+    for (const word of matches) {
+      const li = element("li");
+      const link = element("a", "page-nav-link", word.word);
+      link.href = `dictionary.html?word=${encodeURIComponent(word.word)}`;
+      li.append(link);
+      for (const definition of word.definitions) {
+        li.append(element("p", "concept-match-definition", `/${definition.pronunciation}/ — ${definition.meaning} (${definition.category})`));
+      }
+      list.append(li);
+    }
+    view.matches.append(list);
+  }
+  function createCard(request, previous) {
     const card = element("li", "dictionary-card concept-card");
     card.dataset.conceptId = request.conceptData.id;
     card.append(element("h3", "concept-title", request.conceptData.text));
@@ -77,12 +94,27 @@
       card.append(link);
       return view;
     }
+    view.matches = element("section", "concept-matches");
+    // Suggestions belong directly below the concept, before its author/date.
+    card.insertBefore(view.matches, metadata);
+    updateMatches(view);
+    if (request.conceptData.author === user()) createManagement(view);
     const details = element("details", "concept-assignment");
     view.details = details;
     details.append(element("summary", "", "Assign a word"));
     const form = element("form", "concept-assignment-form");
     const existing = element("select");
-    populateWords(existing);
+    const undefinedFilter = element("input");
+    undefinedFilter.type = "checkbox";
+    undefinedFilter.checked = wordFilters.get(request.conceptData.id) !== false;
+    view.undefinedFilter = undefinedFilter;
+    const filterLabel = labeled("Only undefined words", undefinedFilter);
+    filterLabel.className = "concept-checkbox";
+    populateWords(existing, undefinedFilter.checked);
+    undefinedFilter.addEventListener("change", () => {
+      wordFilters.set(request.conceptData.id, undefinedFilter.checked);
+      populateWords(existing, undefinedFilter.checked);
+    });
     view.existing = existing;
     const spelling = element("input");
     spelling.type = "text";
@@ -93,6 +125,13 @@
     ipa.type = "text";
     ipa.required = true;
     ipa.autocomplete = "off";
+    view.spelling = spelling;
+    view.ipa = ipa;
+    if (previous?.spelling) {
+      spelling.value = previous.spelling.value;
+      ipa.value = previous.ipa.value;
+      details.open = previous.details.open;
+    }
     const warning = element("p", "concept-help");
     warning.setAttribute("role", "status");
     const message = element("p", "concept-assignment-status");
@@ -107,7 +146,9 @@
     generation.append(labeled("Min syllables", min), labeled("Max syllables", max), generate);
     const save = button("Assign as candidate");
     save.type = "submit";
-    form.append(labeled("Existing word", existing), generation,
+    const wordChoice = element("div", "concept-word-choice");
+    wordChoice.append(labeled("Existing word", existing), filterLabel);
+    form.append(wordChoice, generation,
       labeled("Spelling (or type a new word)", spelling), labeled("IPA pronunciation", ipa), warning,
       element("p", "concept-help", "Periods and hyphens mark syllables while editing and are removed from the saved spelling. Existing definitions are retained; this adds a candidate definition."), save, message);
     details.append(form);
@@ -157,7 +198,9 @@
       message.textContent = "Saving assignment…";
       try {
         const assigned = await requests.assign(view.request, spelling.value, ipa.value);
-        words = availableWords([...words, assigned]);
+        rawDictionaryItems = rawDictionaryItems.filter(item => item.rowId !== assigned.rowId || item.timestamp !== assigned.timestamp);
+        rawDictionaryItems.push(assigned);
+        words = availableWords(rawDictionaryItems);
         render();
         status.textContent = `Assigned “${assigned.word}” as a Candidate. Another user can approve it in the dictionary.`;
       } catch (error) {
@@ -172,6 +215,68 @@
     });
     return view;
   }
+  function createManagement(view) {
+    const controls = element("div", "concept-management");
+    const edit = button("Edit request");
+    const remove = button("Delete request");
+    remove.classList.add("is-danger");
+    const editForm = element("form", "concept-edit-form");
+    editForm.hidden = true;
+    const text = element("textarea");
+    text.rows = 3;
+    text.required = true;
+    text.maxLength = 2000;
+    const save = button("Save request"); save.type = "submit";
+    const cancelEdit = button("Cancel");
+    editForm.append(labeled("Edit requested meaning", text), save, cancelEdit);
+    const confirmation = element("div", "concept-delete-confirmation");
+    confirmation.hidden = true;
+    const confirmDelete = button("Confirm delete");
+    const cancelDelete = button("Cancel");
+    confirmation.append(element("p", "concept-help", "Delete this request? Any existing dictionary word and its hearts will be kept."), confirmDelete, cancelDelete);
+    const message = element("p", "concept-assignment-status");
+    message.setAttribute("role", "status");
+    controls.append(edit, remove, editForm, confirmation, message);
+    view.card.append(controls);
+    function sync() {
+      edit.hidden = remove.hidden = Boolean(view.editing || view.deleting);
+      editForm.hidden = !view.editing;
+      confirmation.hidden = !view.deleting;
+      if (view.details) view.details.hidden = Boolean(view.editing || view.deleting);
+    }
+    edit.addEventListener("click", () => {
+      if (view.busy) return;
+      view.editing = true; text.value = view.request.conceptData.text;
+      message.textContent = ""; sync(); text.focus();
+    });
+    remove.addEventListener("click", () => { if (!view.busy) { view.deleting = true; message.textContent = ""; sync(); } });
+    cancelEdit.addEventListener("click", () => { if (!view.busy) { view.editing = false; message.textContent = ""; sync(); } });
+    cancelDelete.addEventListener("click", () => { if (!view.busy) { view.deleting = false; message.textContent = ""; sync(); } });
+    async function mutate(operation) {
+      if (view.busy) return;
+      meaningsRevision++;
+      view.busy = true;
+      const fields = [...view.card.querySelectorAll("input, textarea, select, button")];
+      fields.forEach(field => { field.disabled = true; });
+      message.textContent = "Saving…";
+      try {
+        await operation();
+        view.editing = view.deleting = false;
+        render();
+        status.textContent = "Requested meanings updated.";
+      } catch (error) {
+        message.textContent = error.code === "ConditionalCheckFailedException"
+          ? "This request changed. Refresh the shared list and reconfirm."
+          : error.message;
+        console.error(error);
+      } finally {
+        view.busy = false;
+        fields.forEach(field => { field.disabled = false; });
+      }
+    }
+    editForm.addEventListener("submit", event => { event.preventDefault(); return mutate(() => requests.edit(view.request, text.value)); });
+    confirmDelete.addEventListener("click", () => mutate(() => requests.remove(view.request)));
+  }
   function render() {
     const all = requests.list();
     const ids = new Set(all.map(item => item.conceptData.id));
@@ -181,12 +286,13 @@
       const signature = JSON.stringify(request);
       let view = cards.get(id);
       if (!view || view.signature !== signature) {
-        const next = createCard(request);
+        const next = createCard(request, view);
         next.signature = signature;
         if (view) view.card.replaceWith(next.card);
         view = next;
         cards.set(id, view);
-      } else if (view.existing && !view.busy) populateWords(view.existing);
+      } else if (view.existing && !view.busy) populateWords(view.existing, view.undefinedFilter.checked);
+      updateMatches(view);
       const target = SECRET_MEANING_REQUESTS.fulfilled(request) ? fulfilledList : pending;
       // Retain existing nodes and editors rather than rebuilding on every search.
       if (view.card.parentElement !== target) target.append(view.card);
@@ -223,6 +329,7 @@
     const x = window.scrollX;
     const y = window.scrollY;
     requests.load(raw);
+    rawDictionaryItems = raw;
     words = availableWords(raw);
     render();
     ready = true;
@@ -230,10 +337,14 @@
     if (background) window.scrollTo({ left: x, top: y, behavior: "instant" });
   }
   function sharedConceptsBusy() {
-    return loading || adding || [...cards.values()].some(view => view.busy || view.details?.open);
+    return loading || adding || [...cards.values()].some(view => view.busy || view.editing || view.deleting || view.details?.open);
   }
   async function refresh() {
     if (loading || adding || [...cards.values()].some(view => view.busy)) return;
+    if ([...cards.values()].some(view => view.editing || view.deleting)) {
+      status.textContent = "Save or cancel your request edit/delete confirmation before refreshing. Your draft is kept.";
+      return;
+    }
     loading = true;
     refreshButton.disabled = true;
     status.textContent = "Loading shared concepts…";

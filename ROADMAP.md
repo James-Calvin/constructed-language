@@ -42,6 +42,10 @@ Deferred at the user's request; not part of the current implementation pass.
 - [x] Add a shared list of desired definitions or concepts that do not yet have words, separate from undefined words that already have a spelling.
 - [x] Make it easy to assign an existing word, a generated word, or a manually entered word to a desired definition. A newly defined assignment enters the Candidate approval workflow.
 - [x] Mark desired definitions as fulfilled when assigned, while keeping unassigned concepts easy to find and work through.
+- [x] Default the existing-word picker to undefined words, with an option to show all words and their definitions.
+- [x] Let requesters edit or confirm deletion of their own unassigned concepts, preserving any associated dictionary word and hearts.
+- [x] Suggest existing Candidate and Defined meanings that match any query word beneath each unassigned concept.
+- [x] Offer an inline Select a definition picker and a Write a definition action for undefined dictionary words.
 
 ## Cooperative refresh
 
