@@ -25,6 +25,17 @@ assert.equal(workflow.canApprove(candidate, 'alice'), false);
 assert.equal(workflow.canApprove(candidate, 'bob'), true);
 assert.equal(workflow.canApprove(candidate, ''), false);
 assert.equal(workflow.canApprove(approved, 'charlie'), false);
+const candidateGroups = [
+  { word: 'apple', definitionHistory: [{ ...candidate, user: 'alice' }] },
+  { word: 'zebra', definitionHistory: [{ ...candidate, user: 'bob' }] },
+  { word: 'berry', definitionHistory: [{ ...candidate, user: 'bob' }] },
+  { word: 'pear', definitionHistory: [{ ...candidate, user: 'alice' }] }
+];
+assert.deepEqual([...candidateGroups].sort((a, b) => workflow.compareCandidates(a, b, 'alice')).map(group => group.word),
+  ['berry', 'zebra', 'apple', 'pear'], 'Approvable candidates come first, alphabetical within each author group');
+assert.deepEqual([...candidateGroups].sort((a, b) => workflow.compareCandidates(a, b, 'bob')).map(group => group.word),
+  ['apple', 'pear', 'berry', 'zebra'], 'Ordering follows the signed-in user');
+assert.deepEqual(candidateGroups.map(group => group.word), ['apple', 'zebra', 'berry', 'pear']);
 async function testPersistence() {
   let previous = { ...approved, rowId: 'alice::sun', timestamp: 1, updatedTimestamp: 12,
     conceptData: { id: 'concept-1', text: 'sun', author: 'bob', createdAt: 1 } };

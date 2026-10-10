@@ -689,8 +689,16 @@ function rebuildGroupsFromEntries() {
   groups = nextGroups;
 }
 
+function getFilteredGroups() {
+  const filtered = groups.filter(group => isGroupVisible(group));
+  if (activeFilter === FILTERS.CANDIDATE) {
+    filtered.sort((left, right) => SECRET_DEFINITIONS.compareCandidates(left, right, currentUserId));
+  }
+  return filtered;
+}
+
 function rebuildVisibleGroups() {
-  visibleGroups = groups.filter((group) => isGroupVisible(group));
+  visibleGroups = getFilteredGroups();
   updateFilterControls();
 }
 
@@ -2679,7 +2687,7 @@ function applyDictionarySnapshot(rawItems, background = true) {
     recordsById.set(record.id, record);
   }
   rebuildGroupsFromEntries();
-  const anchorIndex = background ? groups.filter(isGroupVisible).findIndex(group => group.word === anchorWord) : -1;
+  const anchorIndex = background ? getFilteredGroups().findIndex(group => group.word === anchorWord) : -1;
   refreshDictionaryView({ preserveCount: background ? Math.max(previousCount, anchorIndex + 1) : 0, preferredWord: selectedWord });
   if (background) {
     const nextAnchor = [...dictionaryList.children].find(card => card.dataset.word === anchorWord);

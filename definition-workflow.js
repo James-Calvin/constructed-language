@@ -59,7 +59,12 @@
   function canApprove(record, user) {
     return Boolean(user && record && record.user !== user && classification(record) === "candidate");
   }
-  const api = { classification, reviewForSave, save, sharedHearts, canApprove, namedUserId };
+  function compareCandidates(left, right, user) {
+    const priority = Number(canApprove(right.definitionHistory[0], user)) -
+      Number(canApprove(left.definitionHistory[0], user));
+    return priority || left.word.localeCompare(right.word, undefined, { sensitivity: "base", numeric: true });
+  }
+  const api = { classification, reviewForSave, save, sharedHearts, canApprove, namedUserId, compareCandidates };
   root.SECRET_DEFINITIONS = api;
   if (typeof module !== "undefined") module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
