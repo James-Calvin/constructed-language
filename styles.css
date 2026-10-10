@@ -1902,21 +1902,21 @@ h2 {
 }
 
 .dictionary-status-badge.is-candidate {
-  color: #ffc857;
-  background: rgba(255, 200, 87, 0.12);
-  border-color: rgba(255, 200, 87, 0.4);
+  color: #79b8ff;
+  background: rgba(121, 184, 255, 0.12);
+  border-color: rgba(121, 184, 255, 0.4);
 }
 
 .dictionary-status-badge.is-defined {
-  color: #7fc8ff;
-  background: rgba(0, 153, 255, 0.12);
-  border-color: rgba(0, 153, 255, 0.26);
+  color: #69c998;
+  background: rgba(105, 201, 152, 0.12);
+  border-color: rgba(105, 201, 152, 0.4);
 }
 
 .dictionary-status-badge.is-undefined {
-  color: #ffd97a;
-  background: rgba(255, 194, 71, 0.12);
-  border-color: rgba(255, 194, 71, 0.25);
+  color: #f4bf58;
+  background: rgba(244, 191, 88, 0.12);
+  border-color: rgba(244, 191, 88, 0.4);
 }
 
 .dictionary-status-badge.is-mixed {
@@ -2192,8 +2192,8 @@ fieldset.analytics-controls { border: 1px solid var(--border); border-radius: .5
 .analytics-controls button { cursor: pointer; }
 .analytics-controls :focus-visible, .analytics-data summary:focus-visible, #analyticsDiagnostics summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .analytics-defined { --category-color: #69c998; }
-.analytics-candidate { --category-color: #f4bf58; }
-.analytics-undefined { --category-color: #79b8ff; }
+.analytics-candidate { --category-color: #79b8ff; }
+.analytics-undefined { --category-color: #f4bf58; }
 .analytics-controls label[class^="analytics-"]::before { content: ""; width: .6rem; height: .6rem; border-radius: 2px; background: var(--category-color); }
 .analytics-chart { margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--bg-panel); }
 .analytics-bar-row { display: grid; grid-template-columns: minmax(2rem, 15%) minmax(0, 1fr) 7rem; align-items: center; gap: .65rem; margin: .65rem 0; }
