@@ -661,7 +661,7 @@ function rebuildGroupsFromEntries() {
       displayRecord,
       definitionHistory,
       currentUserRecord,
-      hasCurrentUserHeart: Boolean(currentUserRecord && currentUserRecord.hearted),
+      hasCurrentUserHeart: SECRET_MEANING_REQUESTS.hasUserHeart(wordRecords, currentUserId),
       isDictionaryVisible,
       classification: SECRET_DEFINITIONS.classification(definitionHistory[0]),
       sharedHearts: SECRET_DEFINITIONS.sharedHearts(sortedRecords),

@@ -18,6 +18,16 @@
     }
     return null;
   }
+  function hasUserHeart(records, user) {
+    const activity = record => Math.max(Number(record.updatedTimestamp) || 0, Number(record.timestamp) || 0);
+    const own = records.filter(record => String(record.user || "").trim() === String(user || "").trim());
+    // Older request assignments wrote false without a user unheart action.
+    // Ignore that implicit default, but honor explicit unhearts on those rows.
+    const latest = own.filter(record => !(validRequest(record) && record.word && record.pronunciation &&
+      String(record.meaning || "").trim() && !record.hearted && record.unheartedTimestamp == null))
+      .sort((a, b) => activity(b) - activity(a))[0];
+    return Boolean(user && latest?.hearted);
+  }
   const normalized = text => String(text || "").normalize("NFC").toLowerCase();
   const tokens = text => new Set(normalized(text).match(/[\p{L}\p{M}\p{N}]+/gu) || []);
   function groupWords(raw) {
@@ -67,6 +77,18 @@
     function remember(item) {
       items = items.filter(existing => existing.rowId !== item.rowId);
       items.push(item);
+    }
+    async function readWordRows(word) {
+      const rows = [];
+      let cursor;
+      do {
+        const page = await client().scan({ TableName: table, ConsistentRead: true,
+          FilterExpression: "#word = :word", ExpressionAttributeNames: { "#word": "word" },
+          ExpressionAttributeValues: { ":word": word },
+          ...(cursor ? { ExclusiveStartKey: cursor } : {}) }).promise();
+        rows.push(...(page.Items || [])); cursor = page.LastEvaluatedKey;
+      } while (cursor);
+      return rows.filter(record => record.word === word);
     }
     async function add(text) {
       const trimmed = typeof text === "string" ? text.trim() : "";
@@ -132,11 +154,13 @@
       const pronunciation = typeof ipa === "string" ? ipa.trim() : "";
       if (!user() || !word || !pronunciation) throw new Error("A spelling and IPA pronunciation are required.");
       const fresh = await freshUnassigned(request);
+      const hearted = Object.prototype.hasOwnProperty.call(options, "hearted")
+        ? Boolean(options.hearted) : hasUserHeart(await readWordRows(word), user());
       const now = Math.max(Date.now(), (fresh.updatedTimestamp || 0) + 1);
       // The request becomes a normal definition row in the SAME write. There is
       // no second fulfillment write to fail or race, and no new IAM action.
       const item = { ...fresh, word, pronunciation, meaning: fresh.conceptData.text,
-        user: user(), hearted: Boolean(options.hearted), updatedTimestamp: now, meaningUpdatedTimestamp: now,
+        user: user(), hearted, updatedTimestamp: now, meaningUpdatedTimestamp: now,
         unheartedTimestamp: null, definitionReview: { status: "candidate" } };
       const params = { TableName: table, Item: item, ...condition(fresh) };
       await client().put(params).promise();
@@ -149,15 +173,7 @@
       const fresh = await freshUnassigned(request);
       // Recheck the latest definition across users, not just one possibly stale
       // row. This read never changes the matched word or its approval/hearts.
-      const rows = [];
-      let cursor;
-      do {
-        const page = await client().scan({ TableName: table, ConsistentRead: true,
-          FilterExpression: "#word = :word", ExpressionAttributeNames: { "#word": "word" },
-          ExpressionAttributeValues: { ":word": selected.word },
-          ...(cursor ? { ExclusiveStartKey: cursor } : {}) }).promise();
-        rows.push(...(page.Items || [])); cursor = page.LastEvaluatedKey;
-      } while (cursor);
+      const rows = await readWordRows(selected.word);
       const current = groupWords(rows).find(word => word.word === selected.word && word.hasDefinition);
       if (!current || ["rowId", "timestamp", "word", "pronunciation", "meaning", "meaningUpdatedTimestamp"]
         .some(field => current[field] !== selected[field]) ||
@@ -176,7 +192,7 @@
     }
     return { load, list, add, assign, edit, remove, fulfillWithExisting };
   }
-  const api = { create, validRequest, fulfilled, fulfillmentTarget, groupWords, matchesForConcept };
+  const api = { create, validRequest, fulfilled, fulfillmentTarget, hasUserHeart, groupWords, matchesForConcept };
   root.SECRET_MEANING_REQUESTS = api;
   if (typeof module !== "undefined") module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

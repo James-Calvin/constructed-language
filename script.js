@@ -1347,6 +1347,10 @@ async function hydrateWordState(rowId) {
 
 function applyGeneratorDictionaryMatches(state, matches) {
   state.wordRecords = [...matches];
+  const own = findNewestCurrentUserMatch(matches, getCurrentUserId());
+  if (state.saveStatus === "idle" && getLocalUserStateTimestamp(state) <= getActivityTimestamp(own)) {
+    state.hearted = SECRET_MEANING_REQUESTS.hasUserHeart(matches, getCurrentUserId());
+  }
   state.dictionaryClassification = SECRET_DEFINITIONS.classification(findNewestNonEmptyMeaningMatch(matches));
   state.otherHeartUsers = [...new Set(matches
     .filter(item => item.hearted && SECRET_DEFINITIONS.namedUserId(item.user) &&

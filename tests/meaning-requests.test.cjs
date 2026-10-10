@@ -146,6 +146,18 @@ async function run() {
   assert.equal(sharedReference.word, 'unrelated', 'Fulfillment metadata preserves a shared undefined spelling');
   assert.equal(sharedReference.hearted, true);
   assert.equal(fulfillmentTarget(sharedReference).word, 'rays', 'The fulfillment target is separate from the shared dictionary row');
+  const heartedWord = {rowId:'alice::keepsheart',timestamp:1,updatedTimestamp:2,word:'keepsheart',pronunciation:'k',user:'alice',hearted:true};
+  database.set(key(heartedWord), heartedWord);
+  const preserveRequest = await alice.add('kept meaning');
+  const preserveResult = await alice.assign(preserveRequest, 'keepsheart', 'k');
+  assert.equal(preserveResult.hearted,true,'Default assignment preserves the latest personal heart without relying on UI options');
+  const otherRequest = await bob.add('another meaning');
+  const otherResult = await bob.assign(otherRequest, 'keepsheart', 'k');
+  assert.equal(otherResult.hearted,false,'Assignment must not copy another person’s heart');
+  const unheartedWord = {...heartedWord,rowId:'alice::noheart',word:'noheart',hearted:false,unheartedTimestamp:3,updatedTimestamp:3};
+  database.set(key(unheartedWord), unheartedWord);
+  const unheartedRequest = await alice.add('not hearted');
+  assert.equal((await alice.assign(unheartedRequest,'noheart','n')).hearted,false,'Default assignment honors a deliberate unheart');
   await assert.rejects(service('').fulfillWithExisting(latestRequest, latest), /named user/);
   console.log('Meaning request tests passed.');
 }

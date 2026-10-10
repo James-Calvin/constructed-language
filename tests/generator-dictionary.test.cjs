@@ -167,6 +167,19 @@ async function run() {
   assert.equal(picked.hearted,true,'Successful selected definitions automatically heart the word');
   assert.equal(database.find(item=>item.rowId==='unhearted-concept').hearted,true);
   assert.equal(picked.dictionaryClassification,'candidate');
+  const {state:legacyHeart,row:legacyRow}=result('legacy-heart');
+  const legacyOriginal={rowId:'legacy-original',timestamp:1,updatedTimestamp:10,word:'sol',pronunciation:'sol',user:'alice',hearted:true};
+  const legacyAssignment={rowId:'legacy-assignment',timestamp:2,updatedTimestamp:20,meaningUpdatedTimestamp:20,
+    word:'sol',pronunciation:'sol',meaning:'sunlight',user:'alice',hearted:false,unheartedTimestamp:null,
+    definitionReview:{status:'candidate'},conceptData:{id:'legacy',text:'sunlight',author:'bob',createdAt:2}};
+  context.applyCurrentUserMatchToState(legacyHeart,legacyAssignment);
+  context.applyGeneratorDictionaryMatches(legacyHeart,[legacyOriginal,legacyAssignment]);context.renderRow('legacy-heart');
+  assert.equal(legacyHeart.hearted,true,'Generator recovers a heart hidden by a legacy request assignment');
+  assert.equal(legacyRow.querySelector('.heart-btn').textContent,'❤');
+  const deliberateUnheart={...legacyAssignment,updatedTimestamp:30,unheartedTimestamp:30};
+  context.applyCurrentUserMatchToState(legacyHeart,deliberateUnheart);
+  context.applyGeneratorDictionaryMatches(legacyHeart,[legacyOriginal,deliberateUnheart]);context.renderRow('legacy-heart');
+  assert.equal(legacyHeart.hearted,false,'Recovery must not undo an explicit unheart');
   const {state:pickerWord,row:pickerRow}=result('heart-picker');pickerWord.word='pickerword';
   const {state:otherWord,row:otherRow}=result('heart-other');otherWord.word='otherword';
   database.push({rowId:'heart-debug-concept',timestamp:1,conceptData:{id:'hdc',text:'a heart debug meaning',author:'bob',createdAt:1}});

@@ -15,6 +15,7 @@ async function run() {
   const database = new Map();
   const key = item => `${item.rowId}|${item.timestamp}`;
   const client = {
+    scan: () => ({ promise: async () => ({ Items: [...database.values()].map(item => structuredClone(item)) }) }),
     get: ({ Key }) => ({ promise: async () => ({ Item: structuredClone(database.get(key(Key))) }) }),
     put: ({ Item }) => ({ promise: async () => { database.set(key(Item), structuredClone(Item)); } })
   };
@@ -63,6 +64,8 @@ async function run() {
   assert.equal(assigned[0].word, 'sol');
   assert.equal(assigned[0].meaning, 'a more nuanced feeling');
   assert.equal(assigned[0].definitionReview.status, 'candidate');
+  assert.equal(assigned[0].hearted, true, 'Dictionary assignment carries the personal heart onto the newer candidate row');
+  assert.equal(requestsApi.hasUserHeart([...database.values()].filter(item => item.word === 'sol'), 'alice'), true);
   assert.equal(picker.isOpen(), false);
   assert.equal(database.get(key(originalWord)).hearted, true, 'Existing word hearts are not rewritten by assignment');
   assert.equal(mutations, 2);
