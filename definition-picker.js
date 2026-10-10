@@ -1,6 +1,6 @@
 (function (root) {
   "use strict";
-  function create({ client, table, user, read, onChange, onAssigned, onMutation }) {
+  function create({ client, table, user, read, onChange, onAssigned, onMutation, onBusyChange = () => {} }) {
     const requests = root.SECRET_MEANING_REQUESTS.create({ client, table, user });
     let active = null;
     function load(raw) { requests.load(raw); }
@@ -48,6 +48,7 @@
         select.disabled = refresh.disabled = cancel.disabled = state.busy;
         assign.disabled = state.busy || !state.selected || state.needsRefresh;
         message.textContent = state.busy ? "Saving…" : state.error;
+        onBusyChange(state.busy);
       }
       select.addEventListener("change", () => {
         state.selected = requests.list().find(item => item.conceptData.id === select.value) || null;
@@ -83,7 +84,7 @@
       populate(); update();
       return form;
     }
-    return { load, open, close, render, isOpen: () => Boolean(active) };
+    return { load, open, close, render, isOpen: () => Boolean(active), isBusy: () => Boolean(active?.busy) };
   }
   root.SECRET_DEFINITION_PICKER = { create };
   if (typeof module !== "undefined") module.exports = { create };

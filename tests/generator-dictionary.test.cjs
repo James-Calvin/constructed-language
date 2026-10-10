@@ -22,7 +22,7 @@ class Element {
   focus() { context.document.activeElement=this; }
 }
 const elements=new Map();
-let database=[], refreshes=0, failedRead=false, failedWrite=false;
+let database=[], refreshes=0, failedRead=false, failedWrite=false, heldWrite=null, generationMessage='';
 const context={ console, Map, Set, Number, Date,
   document:{createElement:tag=>new Element(tag),activeElement:null},
   toEpochMs:value=>Number(value)||0, trimOrEmpty:value=>typeof value==='string'?value.trim():'',
@@ -36,10 +36,12 @@ const context={ console, Map, Set, Number, Date,
   sharedUi:{deferEditorRender:()=>false,captureEditor:()=>null,restoreEditor(){}},
   createActionButton:(className,text,label,action)=>{const button=new Element('button');button.className=className;button.textContent=text;button.dataset.action=action;return button;},
   awsConfig:{heartsTableName:'secretWords'},flushPersistedRowsSave(){},
+  setTimeout, clearTimeout,
+  setGenerationStatus:message=>{generationMessage=message;},
   generatorConstraints:{accept(){},remember(){}},generatorSync:{request:async()=>{refreshes++;}},
   readGeneratorDefinitionRequests:async()=>{if(failedRead)throw new Error('Offline');return structuredClone(database);},
   getHeartsTableClient:()=>({get:({Key})=>({promise:async()=>({Item:structuredClone(database.find(item=>item.rowId===Key.rowId&&item.timestamp===Key.timestamp))})}),
-    put:({Item})=>({promise:async()=>{if(failedWrite)throw new Error('Offline');database=database.filter(item=>item.rowId!==Item.rowId||item.timestamp!==Item.timestamp).concat(structuredClone(Item));}})})
+    put:({Item})=>({promise:async()=>{if(heldWrite&&Item.rowId==='heart-debug-concept')await heldWrite;if(failedWrite)throw new Error('Offline');database=database.filter(item=>item.rowId!==Item.rowId||item.timestamp!==Item.timestamp).concat(structuredClone(Item));}})})
 };
 context.window=context;
 vm.createContext(context);
@@ -54,6 +56,7 @@ for(const name of ['getActivityTimestamp','getMeaningTimestamp','hasOwnMeaning',
   'sortMatchesByActivityDesc','sortMatchesByMeaningDesc','findNewestNonEmptyMeaningMatch','findNewestCurrentUserMatch',
   'createRowState','applyCurrentUserMatchToState','applyGeneratorDictionaryMatches','rememberGeneratorRecord',
   'getGeneratorDefinitionPicker','openGeneratorDefinitionPicker','renderMeaning','renderRow',
+  'generatorHeartBlockReason','renderGeneratorHeartButton','handleToggleHeart','persistHeartedState',
   'buildCanonicalRecordRowId','buildHeartTableItem','putCurrentUserRecord','persistOwnMeaning',
   'openMeaningEditor','closeMeaningEditor','handleSaveMeaning']) load(name);
 vm.runInContext(fs.readFileSync('definition-picker.js','utf8'),context);
@@ -157,6 +160,61 @@ async function run() {
   assert.equal(picked.hearted,true,'Successful selected definitions automatically heart the word');
   assert.equal(database.find(item=>item.rowId==='unhearted-concept').hearted,true);
   assert.equal(picked.dictionaryClassification,'candidate');
+  const {state:pickerWord,row:pickerRow}=result('heart-picker');pickerWord.word='pickerword';
+  const {state:otherWord,row:otherRow}=result('heart-other');otherWord.word='otherword';
+  database.push({rowId:'heart-debug-concept',timestamp:1,conceptData:{id:'hdc',text:'a heart debug meaning',author:'bob',createdAt:1}});
+  await context.openGeneratorDefinitionPicker('heart-picker');
+  let heartForm=pickerRow.querySelector('.definition-picker');
+  const heartSelect=heartForm.querySelector('select');heartSelect.value='hdc';await heartSelect.fire('change');
+  const messages=[];
+  context.console={info:(...args)=>messages.push(args),warn:(...args)=>messages.push(args),error:(...args)=>messages.push(args)};
+  await context.handleToggleHeart('heart-other');
+  assert.equal(otherWord.hearted,true,'Other words can be hearted while a picker is open');
+  assert.equal(context.generatorDefinitionPicker.isOpen(),true);
+  assert.equal(heartSelect.value,'hdc','Other heart clicks preserve the picker selection');
+  let releaseWrite;heldWrite=new Promise(resolve=>{releaseWrite=resolve;});
+  const pendingAssignment=heartForm.fire('submit');
+  assert.equal(context.generatorDefinitionPicker.isBusy(),true);
+  assert.equal(pickerRow.querySelector('.heart-btn').disabled,true,'Busy picker visibly disables only its own heart');
+  assert.match(pickerRow.querySelector('.heart-btn').title,/definition picker/);
+  context.renderRow('heart-other');assert.equal(otherRow.querySelector('.heart-btn').disabled,false);
+  await context.handleToggleHeart('heart-picker');
+  assert.equal(pickerWord.hearted,false,'Same-word busy picker prevents a racing heart write');
+  assert.match(generationMessage,/definition picker/);
+  assert.ok(messages.some(message=>/Click ignored/.test(message[0])),'Ignored clicks are diagnosed');
+  await context.handleToggleHeart('heart-other');
+  assert.equal(otherWord.hearted,false,'Other hearts still work while assignment is saving');
+  releaseWrite();await pendingAssignment;heldWrite=null;
+  assert.equal(context.generatorDefinitionPicker.isBusy(),false);
+  assert.equal(pickerRow.querySelector('.heart-btn').disabled,false,'Completion reenables the heart');
+  database.push({rowId:'idle-debug-concept',timestamp:1,conceptData:{id:'idc',text:'another debug meaning',author:'bob',createdAt:1}});
+  await context.openGeneratorDefinitionPicker('heart-picker');
+  assert.equal(pickerRow.querySelector('.heart-btn').disabled,false,'Idle pickers do not block their own heart');
+  await context.handleToggleHeart('heart-picker');
+  assert.equal(context.generatorDefinitionPicker.isOpen(),false,'Clicking the same word closes an idle picker and toggles the heart');
+  assert.equal(pickerWord.hearted,false);
+  assert.ok(messages.some(message=>/Saved/.test(message[0])));
+  otherWord.saveStatus='loading-definitions';
+  await context.handleToggleHeart('heart-other');
+  assert.ok(messages.some(message=>/Click ignored/.test(message[0])&&/loading-definitions/.test(message[1].reason)));
+  otherWord.saveStatus='idle';
+  failedWrite=true;await context.handleToggleHeart('heart-other');failedWrite=false;
+  assert.equal(otherWord.hearted,false,'Failed heart writes roll back');
+  assert.ok(messages.some(message=>/Save failed/.test(message[0])));
+  assert.match(generationMessage,/Could not save heart/);
+  let slowCallback, finishSlow, clearedSlow=false;
+  const originalPersist=context.persistHeartedState;
+  context.setTimeout=callback=>{slowCallback=callback;return 99;};
+  context.clearTimeout=id=>{assert.equal(id,99);clearedSlow=true;};
+  context.persistHeartedState=()=>new Promise(resolve=>{finishSlow=resolve;});
+  const slowSave=context.handleToggleHeart('heart-other');slowCallback();
+  assert.ok(messages.some(message=>/still pending after 10 seconds/.test(message[0])));
+  assert.match(generationMessage,/taking longer/);
+  finishSlow();await slowSave;
+  assert.equal(clearedSlow,true);assert.equal(generationMessage,'Heart saved.');
+  assert.equal(otherWord.saveStatus,'idle');
+  context.persistHeartedState=originalPersist;context.setTimeout=setTimeout;context.clearTimeout=clearTimeout;
+  context.console=console;
   console.log('Generator dictionary state and definition tests passed.');
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});

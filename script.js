@@ -1382,6 +1382,11 @@ function getGeneratorDefinitionPicker() {
     client: getHeartsTableClient, table: awsConfig.heartsTableName, user: getCurrentUserId,
     read: readGeneratorDefinitionRequests,
     onMutation: () => { generatorRevision++; },
+    onBusyChange: () => {
+      const state = rowStateById.get(generatorPickerRowId);
+      const row = resultsList.querySelector(`.result-row[data-row-id="${generatorPickerRowId}"]`);
+      if (state && row) renderGeneratorHeartButton(row, state);
+    },
     onChange: () => {
       const rowId = generatorPickerRowId;
       if (!generatorDefinitionPicker.isOpen()) generatorPickerRowId = null;
@@ -1512,6 +1517,32 @@ function renderMeaning(row, state) {
   container.appendChild(select);
 }
 
+function generatorHeartBlockReason(rowId, state) {
+  if (!state) return "The generated word is no longer available.";
+  if (!isHeartsConfigured) return "Hearts persistence is not configured.";
+  if (state.saveStatus !== "idle") return `This word is busy (${state.saveStatus}). Wait for it to finish.`;
+  if (generatorPickerRowId === rowId && generatorDefinitionPicker?.isOpen() && generatorDefinitionPicker.isBusy()) {
+    return "The definition picker for this word is saving or refreshing. Wait for it to finish.";
+  }
+  return "";
+}
+
+function renderGeneratorHeartButton(row, state) {
+  const heartButton = row.querySelector(".heart-btn");
+  if (!heartButton) return;
+  const sharedHearts = SECRET_DEFINITIONS.sharedHearts([
+    ...(state.otherHeartUsers || []).map(user => ({ user, hearted: true })),
+    { user: getCurrentUserId(), hearted: state.hearted }
+  ]);
+  const blocked = generatorHeartBlockReason(state.rowId, state);
+  heartButton.classList.toggle("is-hearted", state.hearted);
+  heartButton.classList.toggle("has-shared-hearts", sharedHearts);
+  heartButton.title = blocked || (sharedHearts ? "Hearted by multiple named users" : "");
+  heartButton.textContent = state.hearted ? "❤" : "♡";
+  heartButton.setAttribute("aria-label", `${state.hearted ? "Remove saved word" : "Save word"}${blocked ? `. ${blocked}` : ""}`);
+  heartButton.disabled = Boolean(blocked);
+}
+
 function renderRow(rowId) {
   const state = rowStateById.get(rowId);
   const row = resultsList.querySelector(`.result-row[data-row-id="${rowId}"]`);
@@ -1532,20 +1563,7 @@ function renderRow(rowId) {
     }
     word.title = colorState ? `Dictionary state: ${colorState}` : "Not in dictionary";
   }
-  const sharedHearts = SECRET_DEFINITIONS.sharedHearts([
-      ...(state.otherHeartUsers || []).map(user => ({ user, hearted: true })),
-      { user: getCurrentUserId(), hearted: state.hearted }
-    ]);
-
-  const heartButton = row.querySelector(".heart-btn");
-  if (heartButton) {
-    heartButton.classList.toggle("is-hearted", state.hearted);
-    heartButton.classList.toggle("has-shared-hearts", sharedHearts);
-    heartButton.title = sharedHearts ? "Hearted by multiple named users" : "";
-    heartButton.textContent = state.hearted ? "❤" : "♡";
-    heartButton.setAttribute("aria-label", state.hearted ? "Remove saved word" : "Save word");
-    heartButton.disabled = state.saveStatus !== "idle";
-  }
+  renderGeneratorHeartButton(row, state);
 
   const copyButton = row.querySelector(".copy-btn");
   if (copyButton) {
@@ -1651,8 +1669,23 @@ async function playPronunciation(rowId) {
 
 async function handleToggleHeart(rowId) {
   const state = rowStateById.get(rowId);
-  if (!state || !isHeartsConfigured || state.saveStatus !== "idle" || generatorDefinitionPicker?.isOpen()) {
+  const started = Date.now();
+  const diagnostic = () => ({ rowId, word: state?.word, hearted: state?.hearted,
+    saveStatus: state?.saveStatus, pickerOpen: Boolean(generatorDefinitionPicker?.isOpen()),
+    pickerRowId: generatorPickerRowId, elapsedMs: Date.now() - started });
+  console.info("[Generator heart] Click received", diagnostic());
+  const blocked = generatorHeartBlockReason(rowId, state);
+  if (blocked) {
+    console.warn("[Generator heart] Click ignored", { ...diagnostic(), reason: blocked });
+    setGenerationStatus(blocked);
     return;
+  }
+  // An idle picker must not silently swallow a click. Close it only when the
+  // heart belongs to that same word; other words leave its selection intact.
+  if (generatorPickerRowId === rowId && generatorDefinitionPicker?.isOpen()) {
+    generatorDefinitionPicker.close();
+    generatorPickerRowId = null;
+    console.info("[Generator heart] Closed idle picker for this word", diagnostic());
   }
 
   const previousHearted = state.hearted;
@@ -1665,15 +1698,25 @@ async function handleToggleHeart(rowId) {
   }
   state.isEditing = false;
   state.saveStatus = "saving-heart";
-  renderRow(rowId);
-
+  let slow = false;
+  const slowTimer = window.setTimeout(() => {
+    slow = true;
+    console.warn("[Generator heart] Save still pending after 10 seconds", diagnostic());
+    setGenerationStatus("Saving this heart is taking longer than expected. Check the console for Generator heart diagnostics.");
+  }, 10000);
   try {
+    renderRow(rowId);
+    console.info("[Generator heart] Saving", diagnostic());
     await persistHeartedState(state, state.hearted);
+    console.info("[Generator heart] Saved", diagnostic());
+    if (slow) setGenerationStatus("Heart saved.", false);
   } catch (error) {
     state.hearted = previousHearted;
     state.isEditing = previousEditing;
-    console.error("Failed to persist heart state.", error);
+    console.error("[Generator heart] Save failed", diagnostic(), error);
+    setGenerationStatus(`Could not save heart: ${error.message}`);
   } finally {
+    window.clearTimeout(slowTimer);
     state.saveStatus = "idle";
     renderRow(rowId);
     flushPersistedRowsSave();
