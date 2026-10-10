@@ -1499,7 +1499,7 @@ function renderMeaning(row, state) {
     return;
   }
 
-  if (!isSelected && !state.hearted) {
+  if (!isSelected) {
     return;
   }
 

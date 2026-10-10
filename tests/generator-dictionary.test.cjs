@@ -85,7 +85,12 @@ async function run() {
   assert.equal(row.querySelector('.heart-btn').textContent,'❤');
   assert.match(row.querySelector('.heart-btn').className,/is-hearted/);
   assert.match(row.querySelector('.word').className,/is-undefined/);
+  assert.equal(row.querySelector('.row-meaning').children.length,0,'Unselected hearted words hide definition actions');
+  context.selectedRowId='r';context.renderRow('r');
   assert.deepEqual(row.querySelector('.row-meaning').children.map(node=>node.textContent),['Write a definition','Select a definition']);
+  context.selectedRowId=null;context.renderRow('r');
+  assert.equal(row.querySelector('.row-meaning').children.length,0,'Deselecting hides both definition actions');
+  context.selectedRowId='r';context.renderRow('r');
   const accepted={...own,rowId:'bob',user:'bob',meaning:'sun',meaningUpdatedTimestamp:25};
   context.applyGeneratorDictionaryMatches(state,[accepted,{...own,updatedTimestamp:99}]);context.renderRow('r');
   assert.match(row.querySelector('.word').className,/is-defined/,'Heart-only activity does not override latest definition');
@@ -126,6 +131,8 @@ async function run() {
   assert.equal(context.generatorDefinitionPicker.isOpen(),false);
   assert.equal(state.dictionaryClassification,'defined','Cancel leaves the existing definition intact');
   const {state:written,row:writtenRow}=result('written');written.word='nova';
+  context.selectedRowId=null;context.renderRow('written');
+  assert.equal(writtenRow.querySelector('.row-meaning').children.length,0,'Unselected unhearted words also hide definition actions');
   context.selectedRowId='written';context.renderRow('written');
   assert.deepEqual(writtenRow.querySelector('.row-meaning').children.map(node=>node.textContent),['Write a definition','Select a definition'],
     'Selected unhearted words offer both definition actions');
