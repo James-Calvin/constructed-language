@@ -22,7 +22,7 @@ class Element {
   focus() { context.document.activeElement=this; }
 }
 const elements=new Map();
-let database=[], refreshes=0, failedRead=false;
+let database=[], refreshes=0, failedRead=false, failedWrite=false;
 const context={ console, Map, Set, Number, Date,
   document:{createElement:tag=>new Element(tag),activeElement:null},
   toEpochMs:value=>Number(value)||0, trimOrEmpty:value=>typeof value==='string'?value.trim():'',
@@ -39,7 +39,7 @@ const context={ console, Map, Set, Number, Date,
   generatorConstraints:{accept(){},remember(){}},generatorSync:{request:async()=>{refreshes++;}},
   readGeneratorDefinitionRequests:async()=>{if(failedRead)throw new Error('Offline');return structuredClone(database);},
   getHeartsTableClient:()=>({get:({Key})=>({promise:async()=>({Item:structuredClone(database.find(item=>item.rowId===Key.rowId&&item.timestamp===Key.timestamp))})}),
-    put:({Item})=>({promise:async()=>{database=database.filter(item=>item.rowId!==Item.rowId||item.timestamp!==Item.timestamp).concat(structuredClone(Item));}})})
+    put:({Item})=>({promise:async()=>{if(failedWrite)throw new Error('Offline');database=database.filter(item=>item.rowId!==Item.rowId||item.timestamp!==Item.timestamp).concat(structuredClone(Item));}})})
 };
 context.window=context;
 vm.createContext(context);
@@ -53,7 +53,9 @@ for(const name of ['getActivityTimestamp','getMeaningTimestamp','hasOwnMeaning',
   'getPreferredOwnMeaning','getDisplayedMeaning','isImportedDisplayMeaning','clearImportedDisplay','syncDisplayMeaning',
   'sortMatchesByActivityDesc','sortMatchesByMeaningDesc','findNewestNonEmptyMeaningMatch','findNewestCurrentUserMatch',
   'createRowState','applyCurrentUserMatchToState','applyGeneratorDictionaryMatches','rememberGeneratorRecord',
-  'getGeneratorDefinitionPicker','openGeneratorDefinitionPicker','renderMeaning','renderRow']) load(name);
+  'getGeneratorDefinitionPicker','openGeneratorDefinitionPicker','renderMeaning','renderRow',
+  'buildCanonicalRecordRowId','buildHeartTableItem','putCurrentUserRecord','persistOwnMeaning',
+  'openMeaningEditor','closeMeaningEditor','handleSaveMeaning']) load(name);
 vm.runInContext(fs.readFileSync('definition-picker.js','utf8'),context);
 function result(id) {
   const state=context.createRowState({rowId:id,timestamp:10000,word:'sol',ipa:'sol'});
@@ -120,6 +122,41 @@ async function run() {
   const cancel=row.querySelector('.definition-picker').children[3];await cancel.fire('click');
   assert.equal(context.generatorDefinitionPicker.isOpen(),false);
   assert.equal(state.dictionaryClassification,'defined','Cancel leaves the existing definition intact');
+  const {state:written,row:writtenRow}=result('written');written.word='nova';
+  context.selectedRowId='written';context.renderRow('written');
+  assert.deepEqual(writtenRow.querySelector('.row-meaning').children.map(node=>node.textContent),['Write a definition','Select a definition'],
+    'Selected unhearted words offer both definition actions');
+  context.openMeaningEditor('written');
+  assert.equal(written.isEditing,true);assert.equal(written.hearted,false,'Opening the editor does not heart the word');
+  written.draftMeaning='  ';await context.handleSaveMeaning('written');
+  assert.equal(written.hearted,false,'Empty submissions do not heart the word');
+  context.openMeaningEditor('written');written.draftMeaning='a new light';written.hasDraftCache=true;
+  failedWrite=true;const originalError=console.error;console.error=()=>{};
+  try { await context.handleSaveMeaning('written'); } finally { console.error=originalError;failedWrite=false; }
+  assert.equal(written.hearted,false,'Failed writes do not heart the word');
+  assert.equal(written.isEditing,true);assert.equal(written.draftMeaning,'a new light');
+  assert.match(written.definitionError,/Offline/);
+  await context.handleSaveMeaning('written');
+  assert.equal(written.hearted,true);assert.equal(written.dictionaryClassification,'candidate');
+  assert.equal(database.find(item=>item.word==='nova').hearted,true,'Definition and heart are persisted together');
+  assert.equal(writtenRow.querySelector('.heart-btn').textContent,'❤');
+  const {state:picked}=result('picked');picked.word='luma';
+  database.push({rowId:'unhearted-concept',timestamp:1,conceptData:{id:'uc',text:'soft light',author:'bob',createdAt:1}});
+  await context.openGeneratorDefinitionPicker('picked');
+  assert.equal(picked.hearted,false,'Opening a picker does not heart the word');
+  let unheartedForm=elements.get('picked').querySelector('.definition-picker');
+  await unheartedForm.children[3].fire('click');
+  assert.equal(picked.hearted,false,'Cancelling selection does not heart the word');
+  await context.openGeneratorDefinitionPicker('picked');
+  unheartedForm=elements.get('picked').querySelector('.definition-picker');
+  const unheartedSelect=unheartedForm.querySelector('select');unheartedSelect.value='uc';await unheartedSelect.fire('change');
+  failedWrite=true;await unheartedForm.fire('submit');failedWrite=false;
+  assert.equal(picked.hearted,false,'Failed assignment does not heart the word');
+  await unheartedForm.children[2].fire('click');
+  unheartedSelect.value='uc';await unheartedSelect.fire('change');await unheartedForm.fire('submit');
+  assert.equal(picked.hearted,true,'Successful selected definitions automatically heart the word');
+  assert.equal(database.find(item=>item.rowId==='unhearted-concept').hearted,true);
+  assert.equal(picked.dictionaryClassification,'candidate');
   console.log('Generator dictionary state and definition tests passed.');
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});

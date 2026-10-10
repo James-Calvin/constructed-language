@@ -716,7 +716,7 @@ async function synthesize(word, ipa) {
   return objectUrl;
 }
 
-async function putCurrentUserRecord(state) {
+async function putCurrentUserRecord(state, overrides = {}) {
   generatorRevision++;
   const currentHeartsTableClient = getHeartsTableClient();
   if (!isHeartsConfigured || !currentHeartsTableClient) {
@@ -733,11 +733,13 @@ async function putCurrentUserRecord(state) {
   }
   state.updatedTimestamp = now;
 
-  const item = buildHeartTableItem(state);
+  const item = { ...buildHeartTableItem(state), ...overrides };
   item.definitionReview = await SECRET_DEFINITIONS.save(currentHeartsTableClient,
     awsConfig.heartsTableName, item);
 
   state.hasPersistedRecord = true;
+  state.hearted = item.hearted;
+  state.unheartedTimestamp = item.unheartedTimestamp;
   generatorRevision++;
   generatorConstraints.remember(item);
   rememberGeneratorRecord(item);
@@ -757,7 +759,7 @@ async function persistHeartedState(state, hearted) {
 async function persistOwnMeaning(state, meaning) {
   state.ownMeaning = meaning;
   state.meaningUpdatedTimestamp = Date.now();
-  await putCurrentUserRecord(state);
+  await putCurrentUserRecord(state, { hearted: true, unheartedTimestamp: null });
 }
 
 function clearSelection() {
@@ -1405,7 +1407,7 @@ function getGeneratorDefinitionPicker() {
 
 async function openGeneratorDefinitionPicker(rowId) {
   const state = rowStateById.get(rowId);
-  if (!state?.hearted || state.saveStatus !== "idle" ||
+  if (!state || !isHeartsConfigured || state.saveStatus !== "idle" ||
       generatorDefinitionPicker?.isOpen()) return;
   state.definitionError = ""; state.saveStatus = "loading-definitions"; renderRow(rowId);
   try {
@@ -1416,7 +1418,7 @@ async function openGeneratorDefinitionPicker(rowId) {
     syncDisplayMeaning(state, findNewestNonEmptyMeaningMatch(state.wordRecords));
     const picker = getGeneratorDefinitionPicker();
     picker.load(items); generatorPickerRowId = rowId; state.saveStatus = "idle";
-    picker.open(state.word, state.ipa, { hearted: state.hearted });
+    picker.open(state.word, state.ipa, { hearted: true });
     const row = resultsList.querySelector(`.result-row[data-row-id="${rowId}"]`);
     row?.querySelector(".definition-picker select")?.focus();
   } catch (error) {
@@ -1457,9 +1459,7 @@ function renderMeaning(row, state) {
     return;
   }
 
-  const canEditMeaning =
-    isHeartsConfigured &&
-    (state.hearted || hasOwnMeaning(state) || isImportedDisplayMeaning(state) || getDraftMeaningTimestamp(state) > 0);
+  const canEditMeaning = isHeartsConfigured;
   if (!canEditMeaning) {
     return;
   }
@@ -1505,13 +1505,11 @@ function renderMeaning(row, state) {
   link.textContent = hasOwnMeaning(state) || hasMeaningText(state.draftMeaning) ? "Edit my meaning" : "Write a definition";
   link.disabled = isSaving;
   container.appendChild(link);
-  if (state.hearted) {
-    const select = document.createElement("button");
-    select.type = "button"; select.className = "meaning-link";
-    select.dataset.action = "select-definition"; select.textContent = "Select a definition";
-    select.disabled = isSaving;
-    container.appendChild(select);
-  }
+  const select = document.createElement("button");
+  select.type = "button"; select.className = "meaning-link";
+  select.dataset.action = "select-definition"; select.textContent = "Select a definition";
+  select.disabled = isSaving;
+  container.appendChild(select);
 }
 
 function renderRow(rowId) {
@@ -1687,10 +1685,7 @@ function openMeaningEditor(rowId) {
   if (
     !state ||
     !isHeartsConfigured ||
-    (!state.hearted &&
-      !hasOwnMeaning(state) &&
-      !isImportedDisplayMeaning(state) &&
-      !hasMeaningText(state.draftMeaning))
+    state.saveStatus !== "idle" || generatorDefinitionPicker?.isOpen()
   ) {
     return;
   }
@@ -1723,10 +1718,7 @@ async function handleSaveMeaning(rowId) {
   if (
     !state ||
     !isHeartsConfigured ||
-    (!state.hearted &&
-      !hasOwnMeaning(state) &&
-      !isImportedDisplayMeaning(state) &&
-      !hasMeaningText(state.draftMeaning))
+    state.saveStatus !== "idle" || generatorDefinitionPicker?.isOpen()
   ) {
     return;
   }
@@ -1747,6 +1739,7 @@ async function handleSaveMeaning(rowId) {
   const previousImportedSourceTimestamp = state.importedSourceTimestamp;
   const previousUpdatedTimestamp = state.updatedTimestamp;
   const previousDraftUpdatedTimestamp = state.draftUpdatedTimestamp;
+  state.definitionError = "";
 
   state.ownMeaning = trimmedMeaning;
   state.draftMeaning = trimmedMeaning;
@@ -1770,6 +1763,7 @@ async function handleSaveMeaning(rowId) {
     state.importedSourceTimestamp = previousImportedSourceTimestamp;
     state.updatedTimestamp = previousUpdatedTimestamp;
     state.draftUpdatedTimestamp = previousDraftUpdatedTimestamp;
+    state.definitionError = `Could not save definition: ${error.message}`;
     console.error("Failed to save meaning.", error);
   } finally {
     state.saveStatus = "idle";
