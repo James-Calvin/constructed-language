@@ -6,7 +6,17 @@
       data.text.trim() && typeof item.rowId === "string" && Number.isFinite(item.timestamp));
   }
   function fulfilled(item) {
-    return Boolean(item && item.word && item.pronunciation && String(item.meaning || "").trim());
+    return Boolean(fulfillmentTarget(item));
+  }
+  function fulfillmentTarget(item) {
+    const target = item?.conceptData?.fulfillment;
+    if (target && typeof target.word === "string" && target.word &&
+        typeof target.pronunciation === "string" && target.pronunciation) return target;
+    if (item && item.word && item.pronunciation && String(item.meaning || "").trim()) {
+      return { word: item.word, pronunciation: item.pronunciation,
+        category: item.definitionReview?.status === "candidate" ? "Candidate" : "Defined" };
+    }
+    return null;
   }
   const normalized = text => String(text || "").normalize("NFC").toLowerCase();
   const tokens = text => new Set(normalized(text).match(/[\p{L}\p{M}\p{N}]+/gu) || []);
@@ -133,9 +143,40 @@
       remember(item);
       return item;
     }
-    return { load, list, add, assign, edit, remove };
+    async function fulfillWithExisting(request, selected) {
+      if (!user()) throw new Error("A named user is required.");
+      if (!selected || typeof selected.word !== "string" || !selected.word) throw new Error("Choose a matching word.");
+      const fresh = await freshUnassigned(request);
+      // Recheck the latest definition across users, not just one possibly stale
+      // row. This read never changes the matched word or its approval/hearts.
+      const rows = [];
+      let cursor;
+      do {
+        const page = await client().scan({ TableName: table, ConsistentRead: true,
+          FilterExpression: "#word = :word", ExpressionAttributeNames: { "#word": "word" },
+          ExpressionAttributeValues: { ":word": selected.word },
+          ...(cursor ? { ExclusiveStartKey: cursor } : {}) }).promise();
+        rows.push(...(page.Items || [])); cursor = page.LastEvaluatedKey;
+      } while (cursor);
+      const current = groupWords(rows).find(word => word.word === selected.word && word.hasDefinition);
+      if (!current || ["rowId", "timestamp", "word", "pronunciation", "meaning", "meaningUpdatedTimestamp"]
+        .some(field => current[field] !== selected[field]) ||
+        current.definitionReview?.status !== selected.definitionReview?.status ||
+        !matchesForConcept(fresh.conceptData.text, [current]).length) {
+        throw new Error("The matching definition changed. Refresh the shared list and choose again.");
+      }
+      const item = { ...fresh, conceptData: { ...fresh.conceptData, fulfillment: {
+        word: current.word, pronunciation: current.pronunciation, meaning: current.meaning,
+        category: current.definitionReview?.status === "candidate" ? "Candidate" : "Defined",
+        rowId: current.rowId, timestamp: current.timestamp, fulfilledBy: user(), fulfilledAt: Date.now()
+      } } };
+      await client().put({ TableName: table, Item: item, ...condition(fresh) }).promise();
+      remember(item);
+      return item;
+    }
+    return { load, list, add, assign, edit, remove, fulfillWithExisting };
   }
-  const api = { create, validRequest, fulfilled, groupWords, matchesForConcept };
+  const api = { create, validRequest, fulfilled, fulfillmentTarget, groupWords, matchesForConcept };
   root.SECRET_MEANING_REQUESTS = api;
   if (typeof module !== "undefined") module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

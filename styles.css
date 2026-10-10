@@ -1641,6 +1641,8 @@ h2 {
 .concept-match-list {
   padding-left: 1.3rem;
 }
+.concept-match-list > li { margin-bottom: 1rem; }
+.concept-match-fulfill { margin: 0 0 .25rem; }
 
 .concept-match-definition {
   margin: 0.3rem 0 0.6rem;

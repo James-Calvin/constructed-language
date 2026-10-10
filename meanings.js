@@ -58,7 +58,7 @@
     select.value = [...select.children].some(option => option.value === selected) ? selected : "";
   }
   function updateMatches(view) {
-    if (!view.matches) return;
+    if (!view.matches || view.busy) return;
     const matches = SECRET_MEANING_REQUESTS.matchesForConcept(view.request.conceptData.text, words);
     view.matches.replaceChildren();
     view.matches.hidden = matches.length === 0;
@@ -73,9 +73,45 @@
       for (const definition of word.definitions) {
         li.append(element("p", "concept-match-definition", `/${definition.pronunciation}/ — ${definition.meaning} (${definition.category})`));
       }
+      const fulfill = button("✓ Fulfill with this word");
+      fulfill.classList.add("concept-match-fulfill");
+      fulfill.setAttribute("aria-label", `Mark this request fulfilled by ${word.word}`);
+      fulfill.title = "Use this existing definition without changing the word";
+      fulfill.addEventListener("click", () => fulfillMatch(view, word));
+      li.append(fulfill);
       list.append(li);
     }
     view.matches.append(list);
+    view.matchStatus = element("p", "concept-assignment-status");
+    view.matchStatus.setAttribute("role", "status");
+    view.matches.append(view.matchStatus);
+  }
+  async function fulfillMatch(view, word) {
+    if (view.busy) return;
+    if (view.editing || view.deleting) {
+      view.matchStatus.textContent = "Save or cancel the request edit/delete confirmation first.";
+      return;
+    }
+    meaningsRevision++;
+    view.busy = true;
+    const controls = [...view.card.querySelectorAll("input, textarea, select, button")];
+    controls.forEach(control => { control.disabled = true; });
+    view.matchStatus.textContent = `Marking fulfilled by ${word.word}…`;
+    try {
+      const fulfilled = await requests.fulfillWithExisting(view.request, word);
+      rawDictionaryItems = rawDictionaryItems.filter(item => item.rowId !== fulfilled.rowId || item.timestamp !== fulfilled.timestamp);
+      rawDictionaryItems.push(fulfilled);
+      words = availableWords(rawDictionaryItems);
+      render();
+      status.textContent = `Fulfilled by “${word.word}”. Its existing definition and hearts are unchanged.`;
+    } catch (error) {
+      view.matchStatus.textContent = error.code === "ConditionalCheckFailedException"
+        ? "This request changed. Refresh the shared list and choose again."
+        : `Could not fulfill: ${error.message}`;
+    } finally {
+      view.busy = false;
+      controls.forEach(control => { control.disabled = false; });
+    }
   }
   function createCard(request, previous) {
     const card = element("li", "dictionary-card concept-card");
@@ -86,11 +122,13 @@
     card.append(metadata);
     const view = { card, request, busy: false };
     if (SECRET_MEANING_REQUESTS.fulfilled(request)) {
-      card.append(element("p", "", `Assigned to ${request.word} /${request.pronunciation}/`));
-      const category = request.definitionReview && request.definitionReview.status === "candidate" ? "Candidate — awaiting approval" : "Defined";
+      const target = SECRET_MEANING_REQUESTS.fulfillmentTarget(request);
+      card.append(element("p", "", `${request.conceptData.fulfillment ? "Fulfilled by" : "Assigned to"} ${target.word} /${target.pronunciation}/`));
+      const category = request.conceptData.fulfillment ? "Existing dictionary definition (unchanged)"
+        : target.category === "Candidate" ? "Candidate — awaiting approval" : "Defined";
       card.append(element("p", "concept-help", category));
       const link = element("a", "page-nav-link", "View in dictionary");
-      link.href = `dictionary.html?word=${encodeURIComponent(request.word)}`;
+      link.href = `dictionary.html?word=${encodeURIComponent(target.word)}`;
       card.append(link);
       return view;
     }
@@ -305,7 +343,7 @@
     let fulfilledCount = 0;
     for (const view of cards.values()) {
       const request = view.request;
-      view.card.hidden = !`${request.conceptData.text} ${request.word || ""}`.normalize("NFC").toLowerCase().includes(query);
+      view.card.hidden = !`${request.conceptData.text} ${SECRET_MEANING_REQUESTS.fulfillmentTarget(request)?.word || request.word || ""}`.normalize("NFC").toLowerCase().includes(query);
       if (!view.card.hidden) {
         if (SECRET_MEANING_REQUESTS.fulfilled(request)) fulfilledCount++; else pendingCount++;
       }

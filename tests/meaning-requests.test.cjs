@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { create, fulfilled, validRequest } = require('../meaning-requests.js');
+const { create, fulfilled, validRequest, groupWords, fulfillmentTarget } = require('../meaning-requests.js');
 const { isDeepStrictEqual } = require('node:util');
 if (!globalThis.crypto) globalThis.crypto = require('node:crypto').webcrypto;
 async function run() {
@@ -14,6 +14,10 @@ async function run() {
       ? previous.updatedTimestamp == null : previous.updatedTimestamp === params.ExpressionAttributeValues[':updated'];
   }
   const client = {
+    scan: params => ({ promise: async () => {
+      assert.equal(params.ConsistentRead, true);
+      return { Items: [...database.values()].filter(item => item.word === params.ExpressionAttributeValues[':word']).map(clone) };
+    } }),
     get: params => ({ promise: async () => ({ Item: clone(database.get(key(params.Key))) }) }),
     put: params => ({ promise: async () => {
       if (failWrites) throw new Error('Offline');
@@ -97,6 +101,52 @@ async function run() {
   await assert.rejects(alice.assign(moon, 'word', ''));
   await assert.rejects(service('').add('nameless'));
   assert.equal(validRequest({ conceptData: { text: 'bad' } }), false);
+  const existing = { rowId: 'match', timestamp: 1, word: 'rays', pronunciation: 'rays', meaning: 'warm sunlight',
+    user: 'bob', hearted: true, meaningUpdatedTimestamp: 10 };
+  database.set(key(existing), clone(existing));
+  const matching = groupWords([existing])[0];
+  const reference = await alice.add('sunlight');
+  failWrites = true;
+  await assert.rejects(bob.fulfillWithExisting(reference, matching), /Offline/);
+  assert.equal(fulfilled(database.get(key(reference))), false);
+  failWrites = false;
+  const resolved = await bob.fulfillWithExisting(reference, matching);
+  assert.equal(fulfilled(resolved), true);
+  assert.equal(resolved.word, undefined, 'Reference fulfillment does not create a duplicate dictionary row');
+  assert.equal(resolved.meaning, undefined, 'The request text does not become a new definition');
+  assert.equal(resolved.conceptData.author, 'alice');
+  assert.equal(fulfillmentTarget(resolved).word, 'rays');
+  assert.equal(resolved.conceptData.fulfillment.fulfilledBy, 'bob');
+  assert.deepEqual(database.get(key(existing)), existing, 'Existing definition, approval, and hearts are unchanged');
+  assert.equal(groupWords([existing, resolved]).length, 1);
+  await assert.rejects(alice.assign(resolved, 'other', 'o'), /already assigned/);
+  await assert.rejects(alice.edit(resolved, 'other'), /already assigned/);
+  await assert.rejects(alice.remove(resolved), /already assigned/);
+  const raced = await alice.add('warm');
+  const race = await Promise.allSettled([alice.fulfillWithExisting(raced, matching), bob.assign(raced, 'new', 'n')]);
+  assert.equal(race.filter(result => result.status === 'fulfilled').length, 1, 'Only one fulfillment or assignment can win');
+  const changed = await alice.add('sunlight');
+  database.set(key(existing), {...existing, meaning:'cold moonlight', meaningUpdatedTimestamp:11});
+  await assert.rejects(alice.fulfillWithExisting(changed, matching), /matching definition changed/);
+  database.set(key(existing), existing);
+  await alice.edit(changed, 'different request');
+  await assert.rejects(alice.fulfillWithExisting(changed, matching), /concept changed/);
+  const newer = { ...existing, rowId:'newer', timestamp:2, meaning:'new sunlight', meaningUpdatedTimestamp:12, definitionReview:{status:'candidate'} };
+  database.set(key(newer), newer);
+  const latestRequest = await alice.add('sunlight');
+  await assert.rejects(alice.fulfillWithExisting(latestRequest, matching), /matching definition changed/);
+  const latest = groupWords([existing,newer])[0];
+  const candidateRef = await alice.fulfillWithExisting(latestRequest, latest);
+  assert.equal(fulfillmentTarget(candidateRef).category, 'Candidate');
+  assert.deepEqual(database.get(key(newer)), newer, 'Existing candidate is not approved or rewritten');
+  const sharedRequest = await alice.add('sunlight');
+  const sharedRow = { ...sharedRequest, word:'unrelated', pronunciation:'u', hearted:true, user:'bob', meaning:null };
+  database.set(key(sharedRow), sharedRow);
+  const sharedReference = await alice.fulfillWithExisting(sharedRequest, latest);
+  assert.equal(sharedReference.word, 'unrelated', 'Fulfillment metadata preserves a shared undefined spelling');
+  assert.equal(sharedReference.hearted, true);
+  assert.equal(fulfillmentTarget(sharedReference).word, 'rays', 'The fulfillment target is separate from the shared dictionary row');
+  await assert.rejects(service('').fulfillWithExisting(latestRequest, latest), /named user/);
   console.log('Meaning request tests passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
