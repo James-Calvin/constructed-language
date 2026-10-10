@@ -105,6 +105,13 @@
       globalScope.location.reload();
     });
     document.body.appendChild(button);
+    const analytics = document.createElement("a");
+    analytics.className = "analytics-shortcut";
+    analytics.href = "analytics.html";
+    analytics.setAttribute("aria-label", "Language analytics");
+    analytics.title = "Language analytics";
+    analytics.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 3v17h17M8 16v-5m5 5V7m5 9V4"/></svg>';
+    document.body.appendChild(analytics);
   }
 
   async function unlock(gate) {

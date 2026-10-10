@@ -53,6 +53,12 @@ Deferred at the user's request; not part of the current implementation pass.
 
 Refresh runs every 30 seconds while visible and focused, and on return. Dictionary and generator refresh defer during editing/saving and catch up afterward. The meanings-needed list refreshes too. Sunrise yellow applies to heart icons (not word text) when two or more named users have hearted a word; legacy identities do not count.
 
+## Language analytics
+
+- [x] Add an authenticated analytics page and floating shortcut, with vowel/consonant charts, category filters, starts/ends views, and accessible count tables.
+- [x] Count uniquely tokenized configured symbols, deduplicate saved spellings, and explain excluded words.
+- [x] Refresh cooperatively without changing page-local selections; retain successful results when reads fail.
+
 ## Deferred
 
 Full undo and revision history are deferred. Separate shared-heart filter work is deferred in favor of the Candidate approval workflow and sunrise-yellow multi-heart styling.

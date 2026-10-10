@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Language analytics</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="auth.js"></script>
+</head>
+<body>
+  <main class="app app-dictionary analytics-page">
+    <nav class="page-nav page-nav-split" aria-label="Main navigation">
+      <a class="page-nav-link" href="index.html">Back to Generator</a>
+      <a class="page-nav-link" href="dictionary.html">Dictionary</a>
+    </nav>
+    <h1>Language analytics</h1>
+    <p>Configured symbols in saved words, counted once per spelling. Ambiguous spellings are excluded rather than guessed.</p>
+    <fieldset class="analytics-controls">
+      <legend>Include words</legend>
+      <label class="analytics-defined"><input type="checkbox" name="category" value="defined" checked> Defined</label>
+      <label class="analytics-candidate"><input type="checkbox" name="category" value="candidate" checked> Candidates</label>
+      <label class="analytics-undefined"><input type="checkbox" name="category" value="undefined" checked> Undefined</label>
+    </fieldset>
+    <div class="analytics-controls">
+      <label for="analyticsPosition">Count symbols at</label>
+      <select id="analyticsPosition">
+        <option value="all">All positions</option>
+        <option value="start">Word starts</option>
+        <option value="end">Word ends</option>
+      </select>
+      <button id="analyticsRefresh" type="button">Refresh</button>
+    </div>
+    <p id="analyticsStatus" role="status">Loading saved words…</p>
+    <p id="analyticsSummary" role="status"></p>
+    <p id="analyticsGuidance" hidden>Configure vowel and consonant symbols in <a href="settings.html">Settings</a> to see their distribution.</p>
+    <div id="analyticsCharts"></div>
+    <details id="analyticsDiagnostics" hidden>
+      <summary id="analyticsDiagnosticsTitle">Excluded spellings</summary>
+      <ul id="analyticsExcluded"></ul>
+    </details>
+    <p class="analytics-footnote">Percentages share one denominator across both charts. Starts and ends count one symbol per analyzed word. Syllable frequencies are not shown because spelling alone may not establish unique syllable boundaries.</p>
+  </main>
+  <script type="application/x-protected-script" data-protected-src="aws-config.js"></script>
+  <script type="application/x-protected-script" data-protected-src="https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js"></script>
+  <script type="application/x-protected-script" data-protected-src="shared.js"></script>
+  <script type="application/x-protected-script" data-protected-src="rules-config.js"></script>
+  <script type="application/x-protected-script" data-protected-src="database-settings.js" data-protected-ready="SECRET_RULES_READY"></script>
+  <script type="application/x-protected-script" data-protected-src="meaning-requests.js"></script>
+  <script type="application/x-protected-script" data-protected-src="cooperative-refresh.js"></script>
+  <script type="application/x-protected-script" data-protected-src="symbol-analytics.js"></script>
+  <script type="application/x-protected-script" data-protected-src="analytics.js"></script>
+</body>
+</html>
