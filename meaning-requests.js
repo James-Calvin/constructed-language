@@ -34,10 +34,11 @@
   }
   function matchesForConcept(text, words) {
     const query = tokens(text);
+    query.delete("to");
     if (!query.size) return [];
     return words.map(word => {
       const matchedTokens = new Set();
-      const definitions = word.definitions.filter(definition => {
+      const definitions = word.definitions.slice(0, 1).filter(definition => {
         const wordsInDefinition = tokens(definition.meaning);
         const matches = [...query].filter(token => wordsInDefinition.has(token));
         matches.forEach(token => matchedTokens.add(token));

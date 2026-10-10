@@ -10,6 +10,7 @@ const rows = [
   { word: 'accent', pronunciation: 'a', meaning: 'Un café chaud' },
   { word: 'substring', pronunciation: 's', meaning: 'Warmer sunlit glow' },
   { word: 'heart-only', pronunciation: 'h', hearted: true },
+  { word: 'verb', pronunciation: 'v', meaning: 'to run', meaningUpdatedTimestamp: 30 },
   { conceptData: { text: 'sunlight' } }
 ];
 const words = groupWords(rows);
@@ -24,10 +25,16 @@ assert.deepEqual(words.filter(word => !word.hasDefinition).map(word => word.word
 const matches = matchesForConcept('WARM sunlight sunlight', words);
 assert.deepEqual(matches.map(word => word.word), ['glow', 'sol']);
 assert.equal(matches[0].score, 2, 'Rank by distinct matching query words');
-assert.equal(matchesForConcept('dappled', words)[0].definitions[0].category, 'Candidate', 'History definitions participate');
+assert.deepEqual(matchesForConcept('dappled', words), [], 'Older definitions do not participate');
+assert.equal(matchesForConcept('warm', words)[0].definitions[0].category, 'Candidate', 'Latest candidate definitions still participate');
+assert.equal(matchesForConcept('sunlight dappled', words).find(word => word.word === 'sol').definitions.length, 1, 'Results show only the latest definition');
+assert.equal(matchesForConcept('sunlight dappled', words).find(word => word.word === 'sol').score, 1, 'Older definitions do not contribute to ranking');
+assert.deepEqual(matchesForConcept('TO', words), [], 'A query containing only to returns no results');
+assert.deepEqual(matchesForConcept('To run', words).map(word => word.word), ['verb'], 'To is ignored case-insensitively, but other words still match');
+assert.equal(matchesForConcept('to sunlight', words).some(word => word.word === 'verb'), false, 'To alone cannot produce a match');
 assert.equal(matchesForConcept('cafe\u0301', words)[0].word, 'accent', 'Unicode normalization is applied');
 assert.equal(matchesForConcept('warm', words).some(word => word.word === 'substring'), false, 'No stemming or substring matching');
-assert.equal(matchesForConcept('through', words)[0].word, 'sol', 'No stop-word removal');
+assert.equal(matchesForConcept('through', words)[0].word, 'sol', 'Other query words are retained');
 assert.deepEqual(matchesForConcept('!!!', words), []);
 assert.deepEqual(matchesForConcept('unknown', words), []);
 console.log('Concept matching tests passed.');

@@ -44,7 +44,7 @@ Deferred at the user's request; not part of the current implementation pass.
 - [x] Mark desired definitions as fulfilled when assigned, while keeping unassigned concepts easy to find and work through.
 - [x] Default the existing-word picker to undefined words, with an option to show all words and their definitions.
 - [x] Let requesters edit or confirm deletion of their own unassigned concepts, preserving any associated dictionary word and hearts.
-- [x] Suggest existing Candidate and Defined meanings that match any query word beneath each unassigned concept.
+- [x] Suggest each word's most recent Candidate or Defined meaning when it matches any query word beneath an unassigned concept; ignore "to" in queries.
 - [x] Offer an inline Select a definition picker and a Write a definition action for undefined dictionary words.
 
 ## Cooperative refresh
