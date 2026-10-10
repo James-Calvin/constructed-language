@@ -256,6 +256,13 @@ h2 {
 .prefix-options summary { cursor: pointer; margin-bottom: 0.6rem; }
 .prefix-options label { display: block; margin-bottom: 0.35rem; }
 .prefix-options input { width: 100%; padding: 0.6rem; font: inherit; color: var(--text-main); background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; }
+.normalization-controls { margin-top: 1rem; padding: .75rem; border: 1px solid var(--border); border-radius: .5rem; min-width: 0; }
+.normalization-controls > p { color: var(--text-muted); font-size: .85rem; }
+.normalization-row { display: flex; flex-wrap: wrap; gap: .65rem 1rem; padding: .65rem; margin: .6rem 0; border: 1px solid var(--border); border-radius: .4rem; min-width: 0; }
+.normalization-row label { display: inline-flex; align-items: center; gap: .4rem; margin: 0; font-size: .85rem; }
+.prefix-options .normalization-row input[type="checkbox"] { width: auto; margin: 0; accent-color: var(--accent); }
+.normalization-controls button { font: inherit; padding: .45rem .65rem; color: var(--text-main); background: var(--bg-input); border: 1px solid var(--border); border-radius: .4rem; cursor: pointer; }
+.normalization-controls :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .prefix-options p { font-size: 0.85rem; margin: 0.4rem 0; }
 
 .generate-btn:hover {

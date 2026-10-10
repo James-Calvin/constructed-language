@@ -35,10 +35,19 @@
     </section>
 
     <details class="prefix-options">
-      <summary>Starts with</summary>
-      <label for="wordPrefix">Starting symbols (optional)</label>
+      <summary>Constraints</summary>
+      <label for="wordPrefix">Starts with (optional)</label>
       <input id="wordPrefix" type="text" autocomplete="off" spellcheck="false" aria-describedby="prefixStatus">
       <p id="prefixStatus" role="status" aria-live="polite"></p>
+      <label for="wordSuffix">Ends with (optional)</label>
+      <input id="wordSuffix" type="text" autocomplete="off" spellcheck="false" aria-describedby="prefixStatus">
+      <fieldset class="normalization-controls">
+        <legend>Normalize</legend>
+        <p>Favor underrepresented symbols in saved words. These weights bias symbol choices, not the exact distribution of complete words.</p>
+        <div id="normalizationRows"></div>
+        <p id="normalizationStatus" role="status" aria-live="polite"></p>
+        <button id="normalizationRetry" type="button" hidden>Retry dictionary load</button>
+      </fieldset>
     </details>
     <button id="generateBtn" class="generate-btn" type="button">Generate</button>
     <p id="generationStatus" class="generation-status is-hidden" role="status" aria-live="polite"></p>
@@ -60,6 +69,10 @@
   <script type="application/x-protected-script" data-protected-src="prefix-generator.js"></script>
   <script type="application/x-protected-script" data-protected-src="definition-workflow.js"></script>
   <script type="application/x-protected-script" data-protected-src="cooperative-refresh.js"></script>
+  <script type="application/x-protected-script" data-protected-src="meaning-requests.js"></script>
+  <script type="application/x-protected-script" data-protected-src="symbol-analytics.js"></script>
+  <script type="application/x-protected-script" data-protected-src="generator-normalization.js"></script>
+  <script type="application/x-protected-script" data-protected-src="generator-constraints.js"></script>
   <script type="application/x-protected-script" data-protected-src="script.js"></script>
 </body>
 </html>

@@ -32,12 +32,20 @@ const maxInput = document.getElementById("maxSyllables");
 const generateBtn = document.getElementById("generateBtn");
 const generationStatus = document.getElementById("generationStatus");
 const wordPrefixInput = document.getElementById("wordPrefix");
+const wordSuffixInput = document.getElementById("wordSuffix");
 const prefixStatus = document.getElementById("prefixStatus");
 const clearAllBtn = document.getElementById("clearAllBtn");
 const resultsList = document.getElementById("results");
 
 const generatedWords = new Set();
 let generatorRevision = 0;
+let generatorSync;
+const generatorConstraints = window.SECRET_GENERATOR_CONSTRAINTS.create({
+  document,
+  config: () => activeRuleConfig,
+  onChange: () => clampSyllables(false),
+  requestRefresh: () => { if (generatorSync) void generatorSync.request(); }
+});
 const rowStateById = new Map();
 const audioCache = new Map();
 const copyFeedbackTimers = new Map();
@@ -413,10 +421,14 @@ function setGenerationStatus(message, isError = true) {
 function syncGenerationAvailability(min, max) {
   ruleConfigCompatibility = evaluateRuleConfigCompatibility(activeRuleConfig, min, max);
   if (prefixStatus) prefixStatus.textContent = "";
-  if (ruleConfigCompatibility.isReady && wordPrefixInput.value.trim()) {
-    const prefixValidation = window.SECRET_PREFIX_GENERATOR.search(activeRuleConfig, wordPrefixInput.value, min, max);
+  if (ruleConfigCompatibility.isReady && (wordPrefixInput.value.trim() || wordSuffixInput.value.trim() || generatorConstraints.enabled())) {
+    const prefixValidation = window.SECRET_PREFIX_GENERATOR.search(activeRuleConfig, wordPrefixInput.value, min, max,
+      false, new Set(), { suffix: wordSuffixInput.value });
     prefixStatus.textContent = prefixValidation.message || "";
     if (!prefixValidation.ready) ruleConfigCompatibility = { isReady: false, message: prefixValidation.message };
+  }
+  if (ruleConfigCompatibility.isReady && !generatorConstraints.ready()) {
+    ruleConfigCompatibility = { isReady: false, message: "Dictionary counts are required for normalization. See Constraints for load status and Retry." };
   }
 
   if (generateBtn) {
@@ -830,10 +842,13 @@ async function putCurrentUserRecord(state) {
   }
   state.updatedTimestamp = now;
 
-  await SECRET_DEFINITIONS.save(currentHeartsTableClient,
-    awsConfig.heartsTableName, buildHeartTableItem(state));
+  const item = buildHeartTableItem(state);
+  item.definitionReview = await SECRET_DEFINITIONS.save(currentHeartsTableClient,
+    awsConfig.heartsTableName, item);
 
   state.hasPersistedRecord = true;
+  generatorRevision++;
+  generatorConstraints.remember(item);
 }
 
 async function persistHeartedState(state, hearted) {
@@ -1867,9 +1882,10 @@ function buildWord(min, max) {
 }
 
 function generateUniqueWord(min, max) {
-  if (wordPrefixInput.value.trim()) {
+  if (wordPrefixInput.value.trim() || wordSuffixInput.value.trim() || generatorConstraints.enabled()) {
     const result = window.SECRET_PREFIX_GENERATOR.search(activeRuleConfig, wordPrefixInput.value,
-      min, max, true, generatedWords);
+      min, max, true, generatedWords, generatorConstraints.options());
+    if (!result.candidate) setGenerationStatus(result.message);
     return result.candidate ? { ...result.candidate, rowId: createRowId(), timestamp: Date.now() } : null;
   }
   for (let attempt = 0; attempt < RETRY_LIMIT; attempt += 1) {
@@ -1927,9 +1943,9 @@ function addResult() {
   const generated = generateUniqueWord(min, max);
 
   if (!generated) {
-    setGenerationStatus(wordPrefixInput.value.trim()
-      ? "All valid words for this prefix are already in the generated list. Clear the list or change the prefix."
-      : "Could not generate a unique word with the current rules.");
+    if (!(wordPrefixInput.value.trim() || wordSuffixInput.value.trim() || generatorConstraints.enabled())) {
+      setGenerationStatus("Could not generate a unique word with the current rules.");
+    }
     return;
   }
 
@@ -2059,6 +2075,7 @@ window.addEventListener("secret-rules-imported", reloadActiveGeneratorRules);
 
 minInput.addEventListener("change", clampSyllables);
 wordPrefixInput.addEventListener("input", () => clampSyllables(false));
+wordSuffixInput.addEventListener("input", () => clampSyllables(false));
 maxInput.addEventListener("change", clampSyllables);
 if (generateBtn) {
   generateBtn.addEventListener("click", addResult);
@@ -2067,13 +2084,13 @@ if (clearAllBtn) {
   clearAllBtn.addEventListener("click", handleClearAllClick);
 }
 
-const generatorSync = SECRET_COOPERATIVE_REFRESH.start({
+generatorSync = SECRET_COOPERATIVE_REFRESH.start({
   isBusy: () => [...rowStateById.values()].some(state => state.isEditing || state.saveStatus !== "idle") ||
     Boolean(document.activeElement && resultsList.contains(document.activeElement) &&
       document.activeElement.matches("input, textarea, select")),
-  version: () => generatorRevision,
+  version: () => `${generatorRevision}:${generatorConstraints.enabled()}:${rowStateById.size > 0}`,
   read: async () => {
-    if (rowStateById.size === 0) return [];
+    if (rowStateById.size === 0 && !generatorConstraints.enabled()) return [];
     if (!isHeartsConfigured || !await ensureAwsCredentials()) throw new Error("Database access is unavailable.");
     const items = [];
     let lastKey;
@@ -2086,6 +2103,8 @@ const generatorSync = SECRET_COOPERATIVE_REFRESH.start({
     return items;
   },
   apply: items => {
+    // A skipped read with no rows and normalization off is not a dictionary snapshot.
+    if (rowStateById.size || generatorConstraints.enabled()) generatorConstraints.accept(items);
     for (const state of rowStateById.values()) {
       const matches = items.filter(item => item.word === state.word && item.pronunciation);
       const own = findNewestCurrentUserMatch(matches, getCurrentUserId());
@@ -2110,6 +2129,11 @@ const generatorSync = SECRET_COOPERATIVE_REFRESH.start({
       renderRow(state.rowId);
     }
     flushPersistedRowsSave();
+  },
+  onSuccess: () => generatorConstraints.success(),
+  onError: error => {
+    generatorConstraints.error();
+    console.warn("Shared refresh failed; keeping current words and normalization counts.", error);
   }
 });
 window.addEventListener("beforeunload", () => generatorSync.stop());

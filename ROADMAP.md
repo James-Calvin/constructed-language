@@ -59,6 +59,12 @@ Refresh runs every 30 seconds while visible and focused, and on return. Dictiona
 - [x] Count uniquely tokenized configured symbols, deduplicate saved spellings, and explain excluded words.
 - [x] Refresh cooperatively without changing page-local selections; retain successful results when reads fail.
 
+## Generator constraints and normalization
+
+- [x] Rename the collapsed Starts with section to Constraints and support combined, symbol-aligned Starts with and Ends with inputs.
+- [x] Add independent start, all-position, and end normalization with per-setting Defined, Candidates, and Undefined populations. Favor underrepresented symbols using separate vowel/consonant count baselines.
+- [x] Apply weighted choices only to rule-valid completions; reuse cooperative dictionary refresh, preserve controls, and retain successful counts on read failures.
+
 ## Deferred
 
 Full undo and revision history are deferred. Separate shared-heart filter work is deferred in favor of the Candidate approval workflow and sunrise-yellow multi-heart styling.
