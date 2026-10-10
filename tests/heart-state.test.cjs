@@ -7,6 +7,7 @@ const assignment = { rowId:'concept',timestamp:2,word:'sol',pronunciation:'sol',
 assert.equal(hasUserHeart([heart,assignment],'alice'),true,'A legacy assignment default must not erase the earlier personal heart');
 assert.equal(hasUserHeart([assignment,heart],'alice'),true,'Input order does not affect recovery');
 assert.equal(hasUserHeart([heart,{...assignment,definitionReview:{status:'defined'}}],'alice'),true,'Approval does not hide the original heart');
+assert.equal(hasUserHeart([heart,{...assignment,meaning:null}],'alice'),true,'Undefining a legacy assignment retains recovered hearts');
 assert.equal(hasUserHeart([assignment],'alice'),false,'Recovery never invents a heart');
 assert.equal(hasUserHeart([heart,assignment],'bob'),false,'Another user does not inherit the heart');
 assert.equal(hasUserHeart([{...heart,user:'bob'},assignment],'alice'),false);

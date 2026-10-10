@@ -5,13 +5,19 @@
     return Boolean(data && typeof data.id === "string" && typeof data.text === "string" &&
       data.text.trim() && typeof item.rowId === "string" && Number.isFinite(item.timestamp));
   }
-  function fulfilled(item) {
-    return Boolean(fulfillmentTarget(item));
+  function fulfilled(item, snapshot) {
+    return Boolean(fulfillmentTarget(item, snapshot));
   }
-  function fulfillmentTarget(item) {
+  function fulfillmentTarget(item, snapshot) {
     const target = item?.conceptData?.fulfillment;
     if (target && typeof target.word === "string" && target.word &&
-        typeof target.pronunciation === "string" && target.pronunciation) return target;
+        typeof target.pronunciation === "string" && target.pronunciation) {
+      if (!Array.isArray(snapshot)) return target;
+      const source = snapshot.find(row => row.rowId === target.rowId && row.timestamp === target.timestamp && row.word);
+      const current = groupWords(snapshot).find(word => word.word === (source?.word || target.word) && word.hasDefinition);
+      return current ? { ...target, word: current.word, pronunciation: current.pronunciation,
+        meaning: current.meaning, category: current.definitionReview?.status === "candidate" ? "Candidate" : "Defined" } : null;
+    }
     if (item && item.word && item.pronunciation && String(item.meaning || "").trim()) {
       return { word: item.word, pronunciation: item.pronunciation,
         category: item.definitionReview?.status === "candidate" ? "Candidate" : "Defined" };
@@ -19,12 +25,12 @@
     return null;
   }
   function hasUserHeart(records, user) {
-    const activity = record => Math.max(Number(record.updatedTimestamp) || 0, Number(record.timestamp) || 0);
+    const activity = record => Number(record.heartUpdatedTimestamp) || Math.max(Number(record.updatedTimestamp) || 0, Number(record.timestamp) || 0);
     const own = records.filter(record => String(record.user || "").trim() === String(user || "").trim());
     // Older request assignments wrote false without a user unheart action.
     // Ignore that implicit default, but honor explicit unhearts on those rows.
     const latest = own.filter(record => !(validRequest(record) && record.word && record.pronunciation &&
-      String(record.meaning || "").trim() && !record.hearted && record.unheartedTimestamp == null))
+      !record.hearted && record.unheartedTimestamp == null))
       .sort((a, b) => activity(b) - activity(a))[0];
     return Boolean(user && latest?.hearted);
   }
@@ -70,13 +76,15 @@
   }
   function create({ client, table, user }) {
     let items = [];
-    function load(raw) { items = raw.filter(validRequest); }
+    let snapshot = [];
+    function load(raw) { snapshot = raw; items = raw.filter(validRequest); }
     function list() {
       return [...items].sort((a, b) => a.conceptData.text.localeCompare(b.conceptData.text, undefined, { sensitivity: "base" }));
     }
     function remember(item) {
       items = items.filter(existing => existing.rowId !== item.rowId);
       items.push(item);
+      snapshot = snapshot.filter(existing => existing.rowId !== item.rowId || existing.timestamp !== item.timestamp).concat(item);
     }
     async function readWordRows(word) {
       const rows = [];
@@ -119,9 +127,20 @@
       const fresh = response.Item;
       if (!validRequest(fresh)) throw new Error("This concept no longer exists. Refresh the list.");
       if (ownerOnly && fresh.conceptData.author !== user()) throw new Error("Only the requester can edit or delete this concept.");
-      if (fulfilled(fresh)) throw new Error(`This concept was already assigned to ${fresh.word}. Refresh the list.`);
+      let current = snapshot;
+      const target = fresh.conceptData.fulfillment;
+      if (target) {
+        const source = target.rowId && Number.isFinite(target.timestamp) ? (await client().get({ TableName: table,
+          Key: { rowId: target.rowId, timestamp: target.timestamp }, ConsistentRead: true }).promise()).Item : null;
+        current = await readWordRows(source?.word || target.word);
+      }
+      if (fulfilled(fresh, current)) throw new Error("This concept was already assigned. Refresh the list.");
       const fields = ["id", "text", "author", "createdAt", "updatedAt"];
       if (fields.some(field => fresh.conceptData[field] !== request.conceptData[field])) {
+        throw new Error("This concept changed. Refresh and reconfirm before saving.");
+      }
+      const before = request.conceptData.fulfillment || {}, after = fresh.conceptData.fulfillment || {};
+      if ([...new Set([...Object.keys(before), ...Object.keys(after)])].some(key => before[key] !== after[key])) {
         throw new Error("This concept changed. Refresh and reconfirm before saving.");
       }
       return fresh;
@@ -143,9 +162,11 @@
         const item = { ...fresh };
         delete item.conceptData;
         await client().put({ TableName: table, Item: item, ...condition(fresh) }).promise();
+        snapshot = snapshot.filter(existing => existing.rowId !== item.rowId || existing.timestamp !== item.timestamp).concat(item);
       } else {
         await client().delete({ TableName: table,
           Key: { rowId: fresh.rowId, timestamp: fresh.timestamp }, ...condition(fresh) }).promise();
+        snapshot = snapshot.filter(existing => existing.rowId !== fresh.rowId || existing.timestamp !== fresh.timestamp);
       }
       items = items.filter(item => item.rowId !== request.rowId);
     }
@@ -161,7 +182,9 @@
       // no second fulfillment write to fail or race, and no new IAM action.
       const item = { ...fresh, word, pronunciation, meaning: fresh.conceptData.text,
         user: user(), hearted, updatedTimestamp: now, meaningUpdatedTimestamp: now,
-        unheartedTimestamp: null, definitionReview: { status: "candidate" } };
+        unheartedTimestamp: null, heartUpdatedTimestamp: now, definitionReview: { status: "candidate" } };
+      item.conceptData = { ...fresh.conceptData };
+      delete item.conceptData.fulfillment;
       const params = { TableName: table, Item: item, ...condition(fresh) };
       await client().put(params).promise();
       remember(item);
@@ -190,7 +213,8 @@
       remember(item);
       return item;
     }
-    return { load, list, add, assign, edit, remove, fulfillWithExisting };
+    return { load, list, add, assign, edit, remove, fulfillWithExisting,
+      fulfilled: item => fulfilled(item, snapshot), fulfillmentTarget: item => fulfillmentTarget(item, snapshot) };
   }
   const api = { create, validRequest, fulfilled, fulfillmentTarget, hasUserHeart, groupWords, matchesForConcept };
   root.SECRET_MEANING_REQUESTS = api;

@@ -121,8 +121,8 @@
       `Requested by ${request.conceptData.author} · ${new Date(request.conceptData.createdAt).toLocaleDateString()}`);
     card.append(metadata);
     const view = { card, request, busy: false };
-    if (SECRET_MEANING_REQUESTS.fulfilled(request)) {
-      const target = SECRET_MEANING_REQUESTS.fulfillmentTarget(request);
+    if (requests.fulfilled(request)) {
+      const target = requests.fulfillmentTarget(request);
       card.append(element("p", "", `${request.conceptData.fulfillment ? "Fulfilled by" : "Assigned to"} ${target.word} /${target.pronunciation}/`));
       const category = request.conceptData.fulfillment ? "Existing dictionary definition (unchanged)"
         : target.category === "Candidate" ? "Candidate — awaiting approval" : "Defined";
@@ -321,7 +321,7 @@
     for (const [id, view] of cards) if (!ids.has(id)) { view.card.remove(); cards.delete(id); }
     for (const request of all) {
       const id = request.conceptData.id;
-      const signature = JSON.stringify(request);
+      const signature = JSON.stringify({ request, target: requests.fulfillmentTarget(request) });
       let view = cards.get(id);
       if (!view || view.signature !== signature) {
         const next = createCard(request, view);
@@ -331,7 +331,7 @@
         cards.set(id, view);
       } else if (view.existing && !view.busy) populateWords(view.existing, view.undefinedFilter.checked);
       updateMatches(view);
-      const target = SECRET_MEANING_REQUESTS.fulfilled(request) ? fulfilledList : pending;
+      const target = requests.fulfilled(request) ? fulfilledList : pending;
       // Retain existing nodes and editors rather than rebuilding on every search.
       if (view.card.parentElement !== target) target.append(view.card);
     }
@@ -343,9 +343,9 @@
     let fulfilledCount = 0;
     for (const view of cards.values()) {
       const request = view.request;
-      view.card.hidden = !`${request.conceptData.text} ${SECRET_MEANING_REQUESTS.fulfillmentTarget(request)?.word || request.word || ""}`.normalize("NFC").toLowerCase().includes(query);
+      view.card.hidden = !`${request.conceptData.text} ${requests.fulfillmentTarget(request)?.word || request.word || ""}`.normalize("NFC").toLowerCase().includes(query);
       if (!view.card.hidden) {
-        if (SECRET_MEANING_REQUESTS.fulfilled(request)) fulfilledCount++; else pendingCount++;
+        if (requests.fulfilled(request)) fulfilledCount++; else pendingCount++;
       }
     }
     document.getElementById("conceptPendingHeading").textContent = `Needs a word (${pendingCount})`;

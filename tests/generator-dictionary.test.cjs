@@ -32,6 +32,8 @@ const context={ console, Map, Set, Number, Date,
   rowStateById:new Map(),selectedRowId:null,playingRowId:null,generatorRevision:0,
   generatorDefinitionPicker:null,generatorPickerRowId:null,
   getCurrentUserId:()=> 'alice',isHeartsConfigured:true,
+  ensureAwsCredentials:async()=>true,
+  scanWordMatches:async word=>structuredClone(database.filter(row=>row.word===word)),
   resultsList:{querySelector:selector=>elements.get(selector.match(/data-row-id="([^"]+)"/)?.[1])},
   sharedUi:{deferEditorRender:()=>false,captureEditor:()=>null,restoreEditor(){}},
   createActionButton:(className,text,label,action)=>{const button=new Element('button');button.className=className;button.textContent=text;button.dataset.action=action;return button;},
@@ -40,7 +42,8 @@ const context={ console, Map, Set, Number, Date,
   setGenerationStatus:message=>{generationMessage=message;},
   generatorConstraints:{accept(){},remember(){}},generatorSync:{request:async()=>{refreshes++;}},
   readGeneratorDefinitionRequests:async()=>{if(failedRead)throw new Error('Offline');return structuredClone(database);},
-  getHeartsTableClient:()=>({get:({Key})=>({promise:async()=>({Item:structuredClone(database.find(item=>item.rowId===Key.rowId&&item.timestamp===Key.timestamp))})}),
+  getHeartsTableClient:()=>({scan:({ExpressionAttributeValues})=>({promise:async()=>({Items:structuredClone(database.filter(row=>row.word===ExpressionAttributeValues[':word']))})}),
+    get:({Key})=>({promise:async()=>({Item:structuredClone(database.find(item=>item.rowId===Key.rowId&&item.timestamp===Key.timestamp))})}),
     put:({Item})=>({promise:async()=>{if(heldWrite&&Item.rowId==='heart-debug-concept')await heldWrite;if(failedWrite)throw new Error('Offline');database=database.filter(item=>item.rowId!==Item.rowId||item.timestamp!==Item.timestamp).concat(structuredClone(Item));}})})
 };
 context.window=context;
@@ -234,6 +237,46 @@ async function run() {
   assert.equal(clearedSlow,true);assert.equal(generationMessage,'Heart saved.');
   assert.equal(otherWord.saveStatus,'idle');
   context.persistHeartedState=originalPersist;context.setTimeout=setTimeout;context.clearTimeout=clearTimeout;
+  context.console=console;
+  const {state:expanded,row:expandedRow}=result('expanded');
+  context.console={...console,error(){}};
+  context.selectedRowId='expanded';
+  const definition={rowId:'shared-definition',timestamp:1,word:'sol',pronunciation:'sol',meaning:'hot; to heat',user:'bob',hearted:true,
+    updatedTimestamp:50,meaningUpdatedTimestamp:50,definitionReview:{status:'defined'},
+    conceptData:{id:'shared-definition',text:'hot; to heat',author:'bob',createdAt:1}};
+  database=[definition];
+  context.applyGeneratorDictionaryMatches(expanded,database);context.renderRow('expanded');
+  assert.ok(expandedRow.querySelector('.row-meaning').children.some(node=>node.textContent==='Append definition'));
+  assert.ok(expandedRow.querySelector('.row-meaning').children.some(node=>node.textContent==='Unlink meaning'));
+  context.openMeaningEditor('expanded','append');
+  assert.equal(expandedRow.querySelector('.meaning-input').value,'');
+  expanded.draftMeaning='fire';
+  await context.handleSaveMeaning('expanded');
+  assert.equal(database[0].meaning,'hot; to heat; fire');
+  assert.equal(database[0].definitionReview.status,'defined');
+  assert.equal(database[0].conceptData.text,'hot; to heat; fire');
+  assert.equal(database[0].user,'bob');assert.equal(database[0].hearted,true);
+  assert.equal(expanded.hearted,false,'Editing another person’s definition does not take their heart');
+  context.openMeaningEditor('expanded');
+  assert.equal(expanded.draftMeaning,'hot; to heat; fire','Editor uses latest shared definition, not own meaning');
+  expanded.draftMeaning='flame';
+  failedWrite=true;await context.handleSaveMeaning('expanded');failedWrite=false;
+  assert.equal(expanded.isEditing,true);assert.equal(expanded.draftMeaning,'flame');
+  assert.match(expanded.definitionError,/Offline/);
+  context.closeMeaningEditor('expanded');assert.equal(database[0].meaning,'hot; to heat; fire');
+  context.openMeaningEditor('expanded','append');expanded.draftMeaning='warm';
+  database[0].meaning='changed elsewhere';database[0].meaningUpdatedTimestamp++;
+  await context.handleSaveMeaning('expanded');
+  assert.equal(expanded.isEditing,true);assert.equal(expanded.draftMeaning,'warm');
+  assert.match(expanded.definitionError,/changed/);
+  context.closeMeaningEditor('expanded');context.applyGeneratorDictionaryMatches(expanded,database);
+  context.openMeaningEditor('expanded','unlink');
+  assert.ok(expandedRow.querySelector('.meaning-input').hidden,'Unlink uses explicit inline confirmation');
+  context.closeMeaningEditor('expanded');assert.ok(database[0].meaning,'Cancel leaves definition untouched');
+  context.openMeaningEditor('expanded','unlink');await context.handleSaveMeaning('expanded');
+  assert.equal(database[0].meaning,null);assert.equal(database[0].hearted,true);
+  assert.equal(database[0].conceptData.text,'hot; to heat; fire','Unlink returns the expanded linked request');
+  assert.equal(expanded.isEditing,false);
   context.console=console;
   console.log('Generator dictionary state and definition tests passed.');
 }

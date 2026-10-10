@@ -272,7 +272,7 @@ function getGroupStatusLabel(classification) {
 }
 
 function getDefinitionAuthorLabel(record) {
-  const user = trimOrEmpty(record && record.user);
+  const user = trimOrEmpty(record && (record.meaningEditedBy || record.user));
   if (!user) {
     return "unknown user";
   }
@@ -504,6 +504,9 @@ function normalizeDictionaryEntry(rawItem) {
     updatedTimestamp,
     meaningUpdatedTimestamp,
     definitionReview: rawItem.definitionReview || null,
+    meaningEditedBy: rawItem.meaningEditedBy || null,
+    meaningEditedAt: rawItem.meaningEditedAt || null,
+    heartUpdatedTimestamp: rawItem.heartUpdatedTimestamp || null,
     conceptData: rawItem.conceptData || null,
     unheartedTimestamp: rawUnheartedTimestamp > 0 ? rawUnheartedTimestamp : null,
     user: trimOrEmpty(rawItem.user),
@@ -527,6 +530,9 @@ function buildDictionaryTableItem(record) {
     updatedTimestamp: record.updatedTimestamp,
     meaningUpdatedTimestamp: record.meaningUpdatedTimestamp ?? null,
     definitionReview: record.definitionReview || null,
+    meaningEditedBy: record.meaningEditedBy || null,
+    meaningEditedAt: record.meaningEditedAt || null,
+    heartUpdatedTimestamp: record.heartUpdatedTimestamp || null,
     conceptData: record.conceptData || null,
     unheartedTimestamp: record.unheartedTimestamp ?? null
   };
@@ -564,7 +570,7 @@ async function scanDictionaryEntries() {
           "#unheartedTimestamp": "unheartedTimestamp"
         },
         ProjectionExpression:
-          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #definitionReview, #noteData, #conceptData, #user, #unheartedTimestamp",
+          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #definitionReview, #noteData, #conceptData, #user, #unheartedTimestamp, meaningEditedBy, meaningEditedAt, heartUpdatedTimestamp",
         ExclusiveStartKey: lastEvaluatedKey
       })
       .promise();
@@ -671,6 +677,9 @@ function rebuildGroupsFromEntries() {
         (previousGroup && previousGroup.hasDraftCache) ||
         hasMeaningText(draftMeaning),
       isEditing: Boolean(previousGroup && previousGroup.isEditing),
+      editMode: previousGroup?.editMode || "edit",
+      definitionBase: previousGroup?.definitionBase || null,
+      definitionError: previousGroup?.definitionError || "",
       saveStatus: previousGroup ? previousGroup.saveStatus : "idle",
       latestActivityTimestamp: sortedRecords.reduce(
         (maxTimestamp, record) => Math.max(maxTimestamp, getActivityTimestamp(record)),
@@ -1011,6 +1020,10 @@ function renderRecordMeaning(row, group, record, isHistoryEntry) {
   if (selectedWord !== group.word) {
     return;
   }
+  if (group.definitionError) {
+    const error = document.createElement("p"); error.setAttribute("role", "status");
+    error.textContent = group.definitionError; container.appendChild(error);
+  }
 
   if (group.isEditing) {
     const editor = document.createElement("div");
@@ -1021,6 +1034,15 @@ function renderRecordMeaning(row, group, record, isHistoryEntry) {
     input.className = "meaning-input";
     input.placeholder = "What does this word mean?";
     input.value = group.draftMeaning;
+    input.setAttribute("aria-label", group.editMode === "append" ? "Additional definition" : "Definition");
+    if (group.editMode === "append") input.placeholder = "Meaning to append";
+    if (group.editMode === "unlink") {
+      input.hidden = true;
+      const warning = document.createElement("p");
+      warning.className = "meaning-unlink-warning";
+      warning.textContent = "Unlink this meaning? All definitions for this spelling will be cleared; hearts are kept and linked meanings return to Meanings needed.";
+      editor.appendChild(warning);
+    }
 
     const saveButton = createActionButton("meaning-action is-save", "✓", "Save my meaning", "save-meaning");
     const cancelButton = createActionButton(
@@ -1029,6 +1051,12 @@ function renderRecordMeaning(row, group, record, isHistoryEntry) {
       "Cancel meaning edit",
       "cancel-meaning"
     );
+    if (group.editMode === "append") { saveButton.textContent = "Append"; saveButton.setAttribute("aria-label", "Append definition"); }
+    if (group.editMode === "unlink") { saveButton.textContent = "Confirm unlink"; saveButton.setAttribute("aria-label", "Confirm unlink meaning"); }
+    if (["append", "unlink"].includes(group.editMode)) {
+      saveButton.className += " is-text"; cancelButton.className += " is-text";
+      cancelButton.textContent = "Cancel";
+    }
 
     if (group.saveStatus !== "idle") {
       input.disabled = true;
@@ -1055,7 +1083,15 @@ function renderRecordMeaning(row, group, record, isHistoryEntry) {
         ? "Edit my meaning"
         : "Write a definition";
   link.disabled = group.saveStatus !== "idle";
+  if (group.definitionHistory.length) link.textContent = group.displayRecord.conceptData ? "Edit meaning" : "Edit definition";
   container.appendChild(link);
+  if (group.definitionHistory.length) {
+    for (const [action, text] of [["append-definition", "Append definition"], ...(group.displayRecord.conceptData && !group.displayRecord.conceptData.fulfillment ? [["unlink-meaning", "Unlink meaning"]] : [])]) {
+      const button = document.createElement("button"); button.type = "button"; button.className = "meaning-link";
+      button.dataset.action = action; button.textContent = text; button.disabled = group.saveStatus !== "idle";
+      container.appendChild(button);
+    }
+  }
   if (group.classification === GROUP_CLASSIFICATIONS.UNDEFINED) {
     const select = document.createElement("button");
     select.type = "button"; select.className = "meaning-link";
@@ -1693,14 +1729,20 @@ function toggleHistory(word) {
   refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word || selectedWord });
 }
 
-function openMeaningEditor(word) {
+function openMeaningEditor(word, mode = "edit") {
   if (!getDefinitionPicker().close()) return;
   const group = getGroupByWord(word);
   if (!group) {
     return;
   }
 
-  if (!group.hasDraftCache) {
+  group.editMode = mode;
+  group.definitionError = "";
+  group.definitionBase = group.definitionHistory[0] ? structuredClone(buildDictionaryTableItem(group.definitionHistory[0])) : null;
+  if (mode !== "edit" || group.definitionBase) {
+    group.draftMeaning = mode === "append" ? "" : group.definitionBase?.meaning || "";
+    group.hasDraftCache = true;
+  } else if (!group.hasDraftCache) {
     group.draftMeaning =
       group.currentUserRecord && hasDefinedMeaning(group.currentUserRecord)
         ? group.currentUserRecord.meaning
@@ -1723,6 +1765,7 @@ function closeMeaningEditor(word) {
   }
 
   group.isEditing = false;
+  group.definitionError = "";
   refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
 }
 
@@ -1843,7 +1886,7 @@ async function handleApproveDefinition(word) {
   }
 }
 
-async function putDictionaryRecord(record) {
+async function putDictionaryRecord(record, options = {}) {
   dictionaryRevision++;
   const currentHeartsClient = getHeartsTableClient();
   if (!isDictionaryConfigured || !currentHeartsClient) {
@@ -1852,8 +1895,9 @@ async function putDictionaryRecord(record) {
 
   await ensureCurrentUserIdentity();
 
-  record.definitionReview = await SECRET_DEFINITIONS.save(currentHeartsClient,
-    awsConfig.heartsTableName, buildDictionaryTableItem(record));
+  const item = buildDictionaryTableItem(record);
+  await SECRET_DEFINITIONS.save(currentHeartsClient, awsConfig.heartsTableName, item, options);
+  Object.assign(record, item);
 }
 
 async function deleteDictionaryRecord(record) {
@@ -1982,13 +2026,20 @@ async function handleUndefineWord(word) {
 
   try {
     await ensureAwsCredentials();
+    const freshDefinitions = (await scanDictionaryEntries()).filter(record => record.word === word && hasDefinedMeaning(record));
+    if (freshDefinitions.length !== snapshots.length || snapshots.some(({ record, meaning }) =>
+      !freshDefinitions.some(fresh => fresh.rowId === record.rowId && fresh.timestamp === record.timestamp && trimOrEmpty(fresh.meaning) === meaning))) {
+      throw new Error("Definitions changed. Cancel and refresh the dictionary before removing them.");
+    }
     const now = Date.now();
     for (const snapshot of snapshots) {
+      const base = buildDictionaryTableItem(snapshot.record);
       snapshot.record.meaning = null;
       snapshot.record.meaningUpdatedTimestamp = null;
       snapshot.record.updatedTimestamp = now;
+      await putDictionaryRecord(snapshot.record, { base });
+      snapshot.saved = true;
     }
-    await Promise.all(snapshots.map(({ record }) => putDictionaryRecord(record)));
 
     group.draftMeaning = "";
     group.hasDraftCache = false;
@@ -1998,11 +2049,18 @@ async function handleUndefineWord(word) {
     refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
   } catch (error) {
     for (const snapshot of snapshots) {
+      if (snapshot.saved) continue;
       snapshot.record.meaning = snapshot.meaning;
       snapshot.record.meaningUpdatedTimestamp = snapshot.meaningUpdatedTimestamp;
       snapshot.record.updatedTimestamp = snapshot.updatedTimestamp;
     }
     group.saveStatus = "idle";
+    rebuildGroupsFromEntries();
+    const current = getGroupByWord(word);
+    if (group.editMode === "unlink") {
+      current.isEditing = true;
+      current.definitionError = `Could not unlink meaning: ${error.message}`;
+    }
     refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: word });
     setStatus("Could not remove this word's definition.", "error");
     console.error("Failed to undefine dictionary word.", error);
@@ -2099,6 +2157,7 @@ async function handleToggleHeart(word) {
 
   const previousCount = renderedGroupCount;
   const previousSaveStatus = group.saveStatus;
+  group.definitionError = "";
   group.saveStatus = "saving-heart";
   refreshDictionaryView({ preserveCount: previousCount, preferredWord: word });
 
@@ -2122,7 +2181,7 @@ async function handleToggleHeart(word) {
     record.updatedTimestamp = now;
     record.unheartedTimestamp = record.hearted ? null : now;
 
-    await putDictionaryRecord(record);
+    await putDictionaryRecord(record, { heartAction: true });
 
     rebuildGroupsFromEntries();
     const nextGroup = getGroupByWord(word);
@@ -2156,7 +2215,13 @@ async function handleSaveMeaning(word) {
     return;
   }
 
-  const trimmedMeaning = trimOrEmpty(group.draftMeaning);
+  if (group.editMode === "unlink") {
+    group.isEditing = false;
+    await handleUndefineWord(word);
+    return;
+  }
+  const addition = trimOrEmpty(group.draftMeaning);
+  const trimmedMeaning = group.editMode === "append" && addition ? `${group.definitionBase.meaning}; ${addition}` : addition;
   if (!trimmedMeaning) {
     closeMeaningEditor(word);
     return;
@@ -2164,6 +2229,7 @@ async function handleSaveMeaning(word) {
 
   const previousCount = renderedGroupCount;
   const previousSaveStatus = group.saveStatus;
+  group.definitionError = "";
   group.saveStatus = "saving-meaning";
   group.isEditing = false;
   refreshDictionaryView({ preserveCount: previousCount, preferredWord: word });
@@ -2172,10 +2238,10 @@ async function handleSaveMeaning(word) {
   let snapshot = null;
 
   try {
-    const ensured = await ensureEditableCurrentUserRecord(group);
+    const ensured = group.definitionBase ? { record: recordsById.get(buildEntryId(group.definitionBase.rowId, group.definitionBase.timestamp)), created: false } : await ensureEditableCurrentUserRecord(group);
     const record = ensured.record;
     createdRecordId = ensured.created ? record.id : "";
-    snapshot = {
+    snapshot = { record, value: structuredClone(record),
       meaning: record.meaning,
       meaningUpdatedTimestamp: record.meaningUpdatedTimestamp,
       updatedTimestamp: record.updatedTimestamp,
@@ -2184,12 +2250,12 @@ async function handleSaveMeaning(word) {
       unheartedTimestamp: record.unheartedTimestamp
     };
 
-    record.user = currentUserId;
+    if (!group.definitionBase) record.user = currentUserId;
     record.meaning = trimmedMeaning;
     record.updatedTimestamp = Date.now();
     record.meaningUpdatedTimestamp = record.updatedTimestamp;
 
-    await putDictionaryRecord(record);
+    await putDictionaryRecord(record, { base: group.definitionBase, editor: currentUserId });
 
     rebuildGroupsFromEntries();
     const nextGroup = getGroupByWord(word);
@@ -2206,8 +2272,9 @@ async function handleSaveMeaning(word) {
       clearCopyFeedback(createdRecordId);
       recordsById.delete(createdRecordId);
     } else if (snapshot) {
-      const record = group.currentUserRecord;
+      const record = snapshot.record;
       if (record) {
+        Object.assign(record, snapshot.value);
         record.meaning = snapshot.meaning;
         record.meaningUpdatedTimestamp = snapshot.meaningUpdatedTimestamp;
         record.updatedTimestamp = snapshot.updatedTimestamp;
@@ -2219,6 +2286,7 @@ async function handleSaveMeaning(word) {
 
     group.saveStatus = previousSaveStatus;
     group.isEditing = true;
+    group.definitionError = `Could not save definition: ${error.message}`;
     refreshDictionaryView({ preserveCount: previousCount, preferredWord: word });
     console.error("Failed to save dictionary meaning.", error);
   }
@@ -2615,6 +2683,10 @@ async function handleDictionaryListClick(event) {
     return;
   }
 
+  if (["append-definition", "unlink-meaning"].includes(actionButton.dataset.action)) {
+    openMeaningEditor(word, actionButton.dataset.action === "append-definition" ? "append" : "unlink");
+    return;
+  }
   if (actionButton.dataset.action === "open-meaning-editor") {
     openMeaningEditor(word);
     return;

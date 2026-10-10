@@ -206,6 +206,8 @@ function getPreferredOwnMeaning(state) {
 }
 
 function getDisplayedMeaning(state) {
+  const latest = findNewestNonEmptyMeaningMatch(state?.wordRecords || []);
+  if (latest) return trimOrEmpty(latest.meaning);
   return state && hasMeaningText(state.displayMeaning) ? trimOrEmpty(state.displayMeaning) : "";
 }
 
@@ -629,7 +631,7 @@ async function scanWordMatches(word) {
           ":word": word
         },
         ProjectionExpression:
-          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #user, #unheartedTimestamp, definitionReview",
+          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #user, #unheartedTimestamp, definitionReview, conceptData, meaningEditedBy, meaningEditedAt, heartUpdatedTimestamp",
         ConsistentRead: true,
         ExclusiveStartKey: lastEvaluatedKey
       })
@@ -716,7 +718,7 @@ async function synthesize(word, ipa) {
   return objectUrl;
 }
 
-async function putCurrentUserRecord(state, overrides = {}) {
+async function putCurrentUserRecord(state, overrides = {}, options = { heartAction: true }) {
   generatorRevision++;
   const currentHeartsTableClient = getHeartsTableClient();
   if (!isHeartsConfigured || !currentHeartsTableClient) {
@@ -735,10 +737,12 @@ async function putCurrentUserRecord(state, overrides = {}) {
 
   const item = { ...buildHeartTableItem(state), ...overrides };
   item.definitionReview = await SECRET_DEFINITIONS.save(currentHeartsTableClient,
-    awsConfig.heartsTableName, item);
+    awsConfig.heartsTableName, item, options);
 
   state.hasPersistedRecord = true;
   state.hearted = item.hearted;
+  state.ownMeaning = item.meaning || null;
+  state.meaningUpdatedTimestamp = item.meaningUpdatedTimestamp;
   state.unheartedTimestamp = item.unheartedTimestamp;
   generatorRevision++;
   generatorConstraints.remember(item);
@@ -759,7 +763,7 @@ async function persistHeartedState(state, hearted) {
 async function persistOwnMeaning(state, meaning) {
   state.ownMeaning = meaning;
   state.meaningUpdatedTimestamp = Date.now();
-  await putCurrentUserRecord(state, { hearted: true, unheartedTimestamp: null });
+  await putCurrentUserRecord(state, { hearted: true, unheartedTimestamp: null }, { heartAction: true, editor: getCurrentUserId() });
 }
 
 function clearSelection() {
@@ -1482,6 +1486,15 @@ function renderMeaning(row, state) {
     input.className = "meaning-input";
     input.placeholder = "What does this word mean?";
     input.value = state.draftMeaning;
+    input.setAttribute("aria-label", state.editMode === "append" ? "Additional definition" : "Definition");
+    if (state.editMode === "append") input.placeholder = "Meaning to append";
+    if (state.editMode === "unlink") {
+      input.hidden = true;
+      const warning = document.createElement("p");
+      warning.className = "meaning-unlink-warning";
+      warning.textContent = "Unlink this meaning? All definitions for this spelling will be cleared; hearts are kept and linked meanings return to Meanings needed.";
+      editor.appendChild(warning);
+    }
 
     const saveButton = createActionButton("meaning-action is-save", "✓", "Save meaning", "save-meaning");
     const cancelButton = createActionButton(
@@ -1490,6 +1503,12 @@ function renderMeaning(row, state) {
       "Cancel meaning edit",
       "cancel-meaning"
     );
+    if (state.editMode === "append") { saveButton.textContent = "Append"; saveButton.setAttribute("aria-label", "Append definition"); }
+    if (state.editMode === "unlink") { saveButton.textContent = "Confirm unlink"; saveButton.setAttribute("aria-label", "Confirm unlink meaning"); }
+    if (["append", "unlink"].includes(state.editMode)) {
+      saveButton.className += " is-text"; cancelButton.className += " is-text";
+      cancelButton.textContent = "Cancel";
+    }
 
     if (isSaving) {
       input.disabled = true;
@@ -1513,7 +1532,16 @@ function renderMeaning(row, state) {
   link.dataset.action = "open-meaning-editor";
   link.textContent = hasOwnMeaning(state) || hasMeaningText(state.draftMeaning) ? "Edit my meaning" : "Write a definition";
   link.disabled = isSaving;
+  const latestDefinition = findNewestNonEmptyMeaningMatch(state.wordRecords || []);
+  if (latestDefinition) link.textContent = latestDefinition.conceptData ? "Edit meaning" : "Edit definition";
   container.appendChild(link);
+  if (latestDefinition) {
+    for (const [action, text] of [["append-definition", "Append definition"], ...(latestDefinition.conceptData && !latestDefinition.conceptData.fulfillment ? [["unlink-meaning", "Unlink meaning"]] : [])]) {
+      const button = document.createElement("button"); button.type = "button"; button.className = "meaning-link";
+      button.dataset.action = action; button.textContent = text; button.disabled = isSaving;
+      container.appendChild(button);
+    }
+  }
   const select = document.createElement("button");
   select.type = "button"; select.className = "meaning-link";
   select.dataset.action = "select-definition"; select.textContent = "Select a definition";
@@ -1727,7 +1755,7 @@ async function handleToggleHeart(rowId) {
   }
 }
 
-function openMeaningEditor(rowId) {
+function openMeaningEditor(rowId, mode = "edit") {
   const state = rowStateById.get(rowId);
   if (
     !state ||
@@ -1737,7 +1765,15 @@ function openMeaningEditor(rowId) {
     return;
   }
 
-  if (!state.hasDraftCache) {
+  state.editMode = mode;
+  state.definitionError = "";
+  const latest = findNewestNonEmptyMeaningMatch(state.wordRecords || []);
+  state.definitionBase = latest ? JSON.parse(JSON.stringify(latest)) : null;
+  if (mode !== "edit" || latest) {
+    state.draftMeaning = mode === "append" ? "" : latest?.meaning || "";
+    state.hasDraftCache = true;
+    state.draftUpdatedTimestamp = null;
+  } else if (!state.hasDraftCache) {
     state.draftMeaning = state.ownMeaning || "";
     state.hasDraftCache = true;
     state.draftUpdatedTimestamp = null;
@@ -1757,6 +1793,7 @@ function closeMeaningEditor(rowId) {
   }
 
   state.isEditing = false;
+  state.definitionError = "";
   renderRow(rowId);
 }
 
@@ -1770,7 +1807,26 @@ async function handleSaveMeaning(rowId) {
     return;
   }
 
-  const trimmedMeaning = trimOrEmpty(state.draftMeaning);
+  if (state.editMode === "unlink") {
+    state.saveStatus = "saving-meaning"; state.definitionError = ""; renderRow(rowId);
+    try {
+      if (!await ensureAwsCredentials()) throw new Error("Database access is unavailable.");
+      const rows = await scanWordMatches(state.word);
+      const latest = findNewestNonEmptyMeaningMatch(rows);
+      if (!latest || latest.rowId !== state.definitionBase.rowId || latest.timestamp !== state.definitionBase.timestamp || latest.meaning !== state.definitionBase.meaning) throw new Error("This definition changed. Cancel and review it again.");
+      for (const base of rows.filter(record => hasMeaningText(record.meaning))) {
+        const item = { ...base, meaning: null, meaningUpdatedTimestamp: null, updatedTimestamp: Date.now() };
+        await SECRET_DEFINITIONS.save(getHeartsTableClient(), awsConfig.heartsTableName, item, { base });
+        generatorRevision++; generatorConstraints.remember(item); rememberGeneratorRecord(item);
+      }
+      state.ownMeaning = null; state.draftMeaning = ""; state.hasDraftCache = false;
+      state.displayMeaning = null; state.isEditing = false;
+    } catch (error) { state.definitionError = `Could not unlink meaning: ${error.message}`; }
+    finally { state.saveStatus = "idle"; renderRow(rowId); flushPersistedRowsSave(); }
+    return;
+  }
+  const addition = trimOrEmpty(state.draftMeaning);
+  const trimmedMeaning = state.editMode === "append" && addition ? `${state.definitionBase.meaning}; ${addition}` : addition;
   if (!trimmedMeaning) {
     closeMeaningEditor(rowId);
     return;
@@ -1789,7 +1845,7 @@ async function handleSaveMeaning(rowId) {
   state.definitionError = "";
 
   state.ownMeaning = trimmedMeaning;
-  state.draftMeaning = trimmedMeaning;
+  state.draftMeaning = state.editMode === "append" ? addition : trimmedMeaning;
   state.draftUpdatedTimestamp = Date.now();
   state.hasDraftCache = true;
   state.isEditing = false;
@@ -1798,7 +1854,17 @@ async function handleSaveMeaning(rowId) {
   renderRow(rowId);
 
   try {
-    await persistOwnMeaning(state, trimmedMeaning);
+    if (state.definitionBase) {
+      if (!await ensureAwsCredentials()) throw new Error("Database access is unavailable.");
+      const item = { ...state.definitionBase, meaning: trimmedMeaning, updatedTimestamp: Date.now(), meaningUpdatedTimestamp: Date.now() };
+      await SECRET_DEFINITIONS.save(getHeartsTableClient(), awsConfig.heartsTableName, item,
+        { base: state.definitionBase, editor: getCurrentUserId() });
+      if (item.user !== getCurrentUserId()) state.ownMeaning = previousOwnMeaning;
+      else state.meaningUpdatedTimestamp = item.meaningUpdatedTimestamp;
+      generatorRevision++; generatorConstraints.remember(item); rememberGeneratorRecord(item);
+    } else {
+      await persistOwnMeaning(state, trimmedMeaning);
+    }
   } catch (error) {
     state.ownMeaning = previousOwnMeaning;
     state.meaningUpdatedTimestamp = previousMeaningUpdatedTimestamp;
@@ -2086,6 +2152,10 @@ async function handleResultListClick(event) {
     return;
   }
 
+  if (["append-definition", "unlink-meaning"].includes(action)) {
+    openMeaningEditor(rowId, action === "append-definition" ? "append" : "unlink");
+    return;
+  }
   if (action === "open-meaning-editor") {
     openMeaningEditor(rowId);
     return;

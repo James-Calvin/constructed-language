@@ -210,6 +210,16 @@ async function run() {
   assert.equal(fulfilledMatch.hidden, false, 'Fulfilled requests can be searched by their linked spelling');
   await nodes.conceptRefresh.fire('click');
   assert.ok(nodes.conceptFulfilled.children.find(node => node.children[0].textContent === 'gentle sunlight'), 'Reference fulfillment survives reload');
+  database.set('match|2', {...originalMatch,word:'shine',meaning:'radiance',meaningUpdatedTimestamp:100});
+  await nodes.conceptRefresh.fire('click');
+  const renamedMatch=nodes.conceptFulfilled.children.find(node=>node.children[0].textContent==='gentle sunlight');
+  assert.ok(renamedMatch.children.some(node=>/Fulfilled by shine/.test(node.textContent)), 'Reference card updates after rename even though request metadata is unchanged');
+  database.set('match|2', {...database.get('match|2'),meaning:null});
+  await nodes.conceptRefresh.fire('click');
+  const reopened=nodes.conceptPending.children.find(node=>node.children[0].textContent==='gentle sunlight');
+  assert.ok(reopened,'Undefining the reference target reopens the request');
+  assert.ok(reopened.children.some(node=>node.className==='concept-management'),'Reopened request gets edit/delete controls');
+  assert.ok(reopened.children.some(node=>node.className==='concept-assignment'),'Reopened request can be reassigned');
   console.log('Meanings UI tests passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

@@ -35,7 +35,7 @@
       function populate() {
         select.replaceChildren();
         const placeholder = document.createElement("option"); placeholder.value = "";
-        const available = requests.list().filter(item => !root.SECRET_MEANING_REQUESTS.fulfilled(item));
+        const available = requests.list().filter(item => !requests.fulfilled(item));
         placeholder.textContent = available.length ? "Choose an unassigned concept" : "No unassigned concepts — add one on Meanings needed";
         select.append(placeholder);
         for (const request of available) {
