@@ -64,6 +64,15 @@ function result(id) {
 }
 async function run() {
   const {state,row}=result('r');
+  context.renderRow('r');
+  assert.doesNotMatch(row.querySelector('.word').className,/is-undefined/,'Unsaved suggestions retain the default white color');
+  assert.equal(row.querySelector('.word').title,'Not in dictionary');
+  context.applyGeneratorDictionaryMatches(state,[{word:'sol',pronunciation:'sol',hearted:false}]);
+  context.renderRow('r');
+  assert.doesNotMatch(row.querySelector('.word').className,/is-undefined/,'Unhearted undefined records are not dictionary entries');
+  context.applyGeneratorDictionaryMatches(state,[{word:'sol',pronunciation:'sol',user:'legacy:identity',hearted:true}]);
+  context.renderRow('r');
+  assert.match(row.querySelector('.word').className,/is-undefined/,'A heart from any user makes an undefined spelling visible in the dictionary');
   const own={rowId:'saved',timestamp:10,updatedTimestamp:20,word:'sol',pronunciation:'sol',user:'alice',hearted:true};
   context.applyCurrentUserMatchToState(state,own);
   assert.equal(state.hearted,true,'New suggestion timestamps must not hide an older persisted heart');

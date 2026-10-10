@@ -1526,10 +1526,13 @@ function renderRow(rowId) {
   row.classList.toggle("is-selected", selectedRowId === rowId);
   const word = row.querySelector(".word");
   if (word) {
+    const classification = state.dictionaryClassification || "undefined";
+    const hasDictionaryHeart = state.hearted || (state.wordRecords || []).some(record => record.hearted);
+    const colorState = classification !== "undefined" || hasDictionaryHeart ? classification : null;
     for (const category of ["defined", "candidate", "undefined"]) {
-      word.classList.toggle(`is-${category}`, (state.dictionaryClassification || "undefined") === category);
+      word.classList.toggle(`is-${category}`, colorState === category);
     }
-    word.title = `Dictionary state: ${state.dictionaryClassification || "undefined"}`;
+    word.title = colorState ? `Dictionary state: ${colorState}` : "Not in dictionary";
   }
   const sharedHearts = SECRET_DEFINITIONS.sharedHearts([
       ...(state.otherHeartUsers || []).map(user => ({ user, hearted: true })),
