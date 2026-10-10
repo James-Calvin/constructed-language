@@ -9,9 +9,9 @@
       active = null;
       return true;
     }
-    function open(word, pronunciation) {
+    function open(word, pronunciation, options = {}) {
       if (active?.busy) return;
-      active = { word, pronunciation, selected: null, error: "", busy: false, needsRefresh: false };
+      active = { word, pronunciation, options, selected: null, error: "", busy: false, needsRefresh: false };
       onChange();
     }
     function render(word) {
@@ -70,7 +70,7 @@
         if (state.busy || !state.selected || state.needsRefresh) return;
         state.busy = true; onMutation(); update();
         try {
-          const assigned = await requests.assign(state.selected, state.word, state.pronunciation);
+          const assigned = await requests.assign(state.selected, state.word, state.pronunciation, state.options);
           active = null;
           onAssigned(assigned);
         } catch (error) {

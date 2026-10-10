@@ -449,6 +449,13 @@ h2 {
   transform: translateX(0);
 }
 
+.result-row .word.is-defined { color: #69c998; }
+.result-row .word.is-candidate { color: #79b8ff; }
+.result-row .word.is-undefined { color: #f4bf58; }
+.result-row .row-meaning { flex-wrap: wrap; }
+.result-row .definition-picker { flex-basis: 100%; min-width: 0; }
+.generator-definition-error { color: #ffaaaa; font-size: .85rem; flex-basis: 100%; }
+
 .row-content {
   flex: 0 1 auto;
   min-width: 0;

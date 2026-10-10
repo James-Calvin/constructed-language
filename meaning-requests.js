@@ -117,7 +117,7 @@
       }
       items = items.filter(item => item.rowId !== request.rowId);
     }
-    async function assign(request, spelling, ipa) {
+    async function assign(request, spelling, ipa, options = {}) {
       const word = typeof spelling === "string" ? spelling.trim().replace(/[.-]/g, "") : "";
       const pronunciation = typeof ipa === "string" ? ipa.trim() : "";
       if (!user() || !word || !pronunciation) throw new Error("A spelling and IPA pronunciation are required.");
@@ -126,7 +126,7 @@
       // The request becomes a normal definition row in the SAME write. There is
       // no second fulfillment write to fail or race, and no new IAM action.
       const item = { ...fresh, word, pronunciation, meaning: fresh.conceptData.text,
-        user: user(), hearted: false, updatedTimestamp: now, meaningUpdatedTimestamp: now,
+        user: user(), hearted: Boolean(options.hearted), updatedTimestamp: now, meaningUpdatedTimestamp: now,
         unheartedTimestamp: null, definitionReview: { status: "candidate" } };
       const params = { TableName: table, Item: item, ...condition(fresh) };
       await client().put(params).promise();

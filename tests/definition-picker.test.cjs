@@ -70,6 +70,15 @@ async function run() {
   form = picker.render('other');
   assert.match(form.children[0].children[0].children[0].textContent, /No unassigned concepts/);
   assert.equal(form.children[1].disabled, true);
+  picker.close();
+  const generatorRequest = await service.add('a generator-selected meaning');
+  picker.load([...database.values()]);
+  picker.open('generated', 'g', { hearted: true });
+  form = picker.render('generated'); select = form.children[0].children[0];
+  select.value = generatorRequest.conceptData.id; await select.fire('change');
+  await form.fire('submit');
+  assert.equal(assigned.at(-1).hearted, true, 'Generator assignment preserves the current user heart');
+  assert.equal(assigned.at(-1).definitionReview.status, 'candidate');
   console.log('Definition picker tests passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

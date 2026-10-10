@@ -47,6 +47,8 @@ const generatorConstraints = window.SECRET_GENERATOR_CONSTRAINTS.create({
   requestRefresh: () => { if (generatorSync) void generatorSync.request(); }
 });
 const rowStateById = new Map();
+let generatorDefinitionPicker = null;
+let generatorPickerRowId = null;
 const audioCache = new Map();
 const copyFeedbackTimers = new Map();
 const sharedAudio = new Audio();
@@ -596,58 +598,6 @@ function findNewestNonEmptyMeaningMatch(items) {
   return sorted.find((item) => hasMeaningText(item.meaning)) || null;
 }
 
-function logMeaningMatchesFromFullRead(word, matches) {
-  const flattened = sortMatchesByActivityDesc(matches).map((item) => ({
-    rowId: item.rowId,
-    timestamp: item.timestamp,
-    updatedTimestamp: item.updatedTimestamp ?? null,
-    meaningUpdatedTimestamp: item.meaningUpdatedTimestamp ?? null,
-    user: item.user ?? null,
-    hearted: item.hearted ?? null,
-    meaning: item.meaning ?? null
-  }));
-
-  console.log("Definition lookup used full table read for word.", {
-    word,
-    matches: flattened
-  });
-}
-
-async function queryWordMatchesByIndex(word) {
-  const currentHeartsTableClient = getHeartsTableClient();
-  if (!currentHeartsTableClient) {
-    return [];
-  }
-
-  const matches = [];
-  let lastEvaluatedKey = undefined;
-
-  do {
-    const response = await currentHeartsTableClient
-      .query({
-        TableName: awsConfig.heartsTableName,
-        IndexName: awsConfig.heartsWordTimestampIndexName,
-        KeyConditionExpression: "#word = :word",
-        ExpressionAttributeNames: {
-          "#word": "word"
-        },
-        ExpressionAttributeValues: {
-          ":word": word
-        },
-        ScanIndexForward: false,
-        ExclusiveStartKey: lastEvaluatedKey
-      })
-      .promise();
-
-    if (Array.isArray(response.Items) && response.Items.length > 0) {
-      matches.push(...response.Items);
-    }
-
-    lastEvaluatedKey = response.LastEvaluatedKey;
-  } while (lastEvaluatedKey);
-
-  return matches;
-}
 
 async function scanWordMatches(word) {
   const currentHeartsTableClient = getHeartsTableClient();
@@ -679,7 +629,8 @@ async function scanWordMatches(word) {
           ":word": word
         },
         ProjectionExpression:
-          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #user, #unheartedTimestamp",
+          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #user, #unheartedTimestamp, definitionReview",
+        ConsistentRead: true,
         ExclusiveStartKey: lastEvaluatedKey
       })
       .promise();
@@ -705,76 +656,16 @@ function findNewestCurrentUserMatch(items, currentUserId) {
 }
 
 async function lookupWordState(word) {
-  if (!isHeartsConfigured) {
-    return null;
-  }
-
-  const ready = await ensureAwsCredentials();
-  if (!ready) {
-    return null;
-  }
-
+  if (!isHeartsConfigured || !await ensureAwsCredentials()) return null;
+  // The GSI may omit review metadata or lag behind a heart write. Read the
+  // authoritative records for this spelling before applying dictionary state.
+  const matches = await scanWordMatches(word);
   const currentUserId = getCurrentUserId();
-
-  try {
-    const indexedMatches = await queryWordMatchesByIndex(word);
-    const missingMeaningProjection =
-      indexedMatches.length > 0 &&
-      indexedMatches.some(
-        (item) =>
-          !Object.prototype.hasOwnProperty.call(item, "meaning") ||
-          (hasMeaningText(item.meaning) &&
-            !Object.prototype.hasOwnProperty.call(item, "meaningUpdatedTimestamp")) ||
-          !Object.prototype.hasOwnProperty.call(item, "user") ||
-          !Object.prototype.hasOwnProperty.call(item, "hearted") ||
-          !Object.prototype.hasOwnProperty.call(item, "updatedTimestamp")
-      );
-
-    if (missingMeaningProjection) {
-      const fallbackMatches = await scanWordMatches(word);
-      logMeaningMatchesFromFullRead(word, fallbackMatches);
-      return {
-        currentUserId,
-        currentUserMatch: findNewestCurrentUserMatch(fallbackMatches, currentUserId),
-        latestMeaningMatch: findNewestNonEmptyMeaningMatch(fallbackMatches),
-        latestImportedMeaningMatch:
-          sortMatchesByMeaningDesc(fallbackMatches).find(
-            (item) => trimOrEmpty(item.user) !== currentUserId && hasMeaningText(item.meaning)
-          ) || null,
-        usedFullRead: true,
-        matches: fallbackMatches
-      };
-    }
-
-    return {
-      currentUserId,
-      currentUserMatch: findNewestCurrentUserMatch(indexedMatches, currentUserId),
-      latestMeaningMatch: findNewestNonEmptyMeaningMatch(indexedMatches),
-      latestImportedMeaningMatch:
-        sortMatchesByMeaningDesc(indexedMatches).find(
-          (item) => trimOrEmpty(item.user) !== currentUserId && hasMeaningText(item.meaning)
-        ) || null,
-      usedFullRead: false,
-      matches: indexedMatches
-    };
-  } catch (queryError) {
-    console.warn("Word definition index lookup failed; using full table read fallback.", queryError);
-    const fallbackMatches = await scanWordMatches(word);
-    logMeaningMatchesFromFullRead(word, fallbackMatches);
-
-    return {
-      currentUserId,
-      currentUserMatch: findNewestCurrentUserMatch(fallbackMatches, currentUserId),
-      latestMeaningMatch: findNewestNonEmptyMeaningMatch(fallbackMatches),
-      latestImportedMeaningMatch:
-        sortMatchesByMeaningDesc(fallbackMatches).find(
-          (item) => trimOrEmpty(item.user) !== currentUserId && hasMeaningText(item.meaning)
-        ) || null,
-      usedFullRead: true,
-      matches: fallbackMatches,
-      queryError
-    };
-  }
+  return { currentUserId, matches,
+    currentUserMatch: findNewestCurrentUserMatch(matches, currentUserId),
+    latestMeaningMatch: findNewestNonEmptyMeaningMatch(matches),
+    latestImportedMeaningMatch: sortMatchesByMeaningDesc(matches).find(item =>
+      trimOrEmpty(item.user) !== currentUserId && hasMeaningText(item.meaning)) || null };
 }
 
 async function synthesize(word, ipa) {
@@ -849,6 +740,7 @@ async function putCurrentUserRecord(state) {
   state.hasPersistedRecord = true;
   generatorRevision++;
   generatorConstraints.remember(item);
+  rememberGeneratorRecord(item);
 }
 
 async function persistHeartedState(state, hearted) {
@@ -939,6 +831,8 @@ function createRowState(generated) {
     word: generated.word,
     ipa: generated.ipa,
     hearted: false,
+    dictionaryClassification: "undefined",
+    wordRecords: [],
     ownMeaning: null,
     meaningUpdatedTimestamp: null,
     displayMeaning: null,
@@ -1069,6 +963,7 @@ function serializeRowState(state) {
     word: state.word,
     ipa: state.ipa,
     hearted: Boolean(state.hearted),
+    dictionaryClassification: state.dictionaryClassification || "undefined",
     ownMeaning: ownMeaning || null,
     meaningUpdatedTimestamp:
       ownMeaning && Number.isFinite(meaningUpdatedTimestamp) ? meaningUpdatedTimestamp : null,
@@ -1141,6 +1036,9 @@ function deserializeRowState(rawState) {
     word,
     ipa,
     hearted: Boolean(rawState.hearted),
+    dictionaryClassification: ["defined", "candidate", "undefined"].includes(rawState.dictionaryClassification)
+      ? rawState.dictionaryClassification : "undefined",
+    wordRecords: [],
     ownMeaning,
     meaningUpdatedTimestamp,
     displayMeaning,
@@ -1292,6 +1190,7 @@ function restorePersistedRows() {
     generatedWords.add(state.word);
     resultsList.append(row);
     renderRow(state.rowId);
+    void hydrateWordState(state.rowId);
   }
 
   if (skippedRows > 0) {
@@ -1300,6 +1199,8 @@ function restorePersistedRows() {
 }
 
 function clearAllResults() {
+  if (generatorDefinitionPicker && !generatorDefinitionPicker.close()) return;
+  generatorPickerRowId = null;
   clearPersistRowsTimer();
 
   const rowIds = Array.from(copyFeedbackTimers.keys());
@@ -1377,18 +1278,18 @@ function applyCurrentUserMatchToState(state, match) {
   if (!state || !match) {
     return;
   }
+  if (state.saveStatus !== "idle") return;
 
+  // Capture before hasPersistedRecord/timestamp are changed: a newly generated
+  // suggestion is not a local edit newer than its existing dictionary record.
+  const localTimestamp = getLocalUserStateTimestamp(state);
   state.user = trimOrEmpty(match.user) || state.user;
   state.recordRowId = trimOrEmpty(match.rowId) || state.recordRowId;
   state.hasPersistedRecord = true;
   state.timestamp = toEpochMs(match.timestamp) || state.timestamp;
   state.ipa = trimOrEmpty(match.pronunciation || match.ipa) || state.ipa;
 
-  if (state.saveStatus !== "idle") {
-    return;
-  }
-
-  if (getLocalUserStateTimestamp(state) > getActivityTimestamp(match)) {
+  if (localTimestamp > getActivityTimestamp(match)) {
     return;
   }
 
@@ -1416,6 +1317,7 @@ async function hydrateWordState(rowId) {
     return;
   }
 
+  const revision = generatorRevision;
   try {
     const lookup = await lookupWordState(initialState.word);
     if (!lookup) {
@@ -1426,17 +1328,103 @@ async function hydrateWordState(rowId) {
     if (!currentState) {
       return;
     }
+    if (revision !== generatorRevision || currentState.saveStatus !== "idle" || generatorDefinitionPicker?.isOpen()) {
+      if (generatorSync) void generatorSync.request();
+      return;
+    }
 
     applyCurrentUserMatchToState(currentState, lookup.currentUserMatch);
-    currentState.otherHeartUsers = [...new Set(lookup.matches
-      .filter(item => item.hearted && SECRET_DEFINITIONS.namedUserId(item.user) &&
-        SECRET_DEFINITIONS.namedUserId(item.user) !== SECRET_DEFINITIONS.namedUserId(getCurrentUserId()))
-      .map(item => SECRET_DEFINITIONS.namedUserId(item.user)))];
+    applyGeneratorDictionaryMatches(currentState, lookup.matches);
     syncDisplayMeaning(currentState, lookup.latestImportedMeaningMatch || lookup.latestMeaningMatch);
     renderRow(rowId);
     flushPersistedRowsSave();
   } catch (error) {
     console.error("Failed to hydrate generated word state.", error);
+  }
+}
+
+function applyGeneratorDictionaryMatches(state, matches) {
+  state.wordRecords = [...matches];
+  state.dictionaryClassification = SECRET_DEFINITIONS.classification(findNewestNonEmptyMeaningMatch(matches));
+  state.otherHeartUsers = [...new Set(matches
+    .filter(item => item.hearted && SECRET_DEFINITIONS.namedUserId(item.user) &&
+      SECRET_DEFINITIONS.namedUserId(item.user) !== SECRET_DEFINITIONS.namedUserId(getCurrentUserId()))
+    .map(item => SECRET_DEFINITIONS.namedUserId(item.user)))];
+}
+
+function rememberGeneratorRecord(item) {
+  for (const state of rowStateById.values()) {
+    if (state.word !== item.word) continue;
+    const matches = (state.wordRecords || []).filter(record =>
+      record.rowId !== item.rowId || record.timestamp !== item.timestamp).concat(item);
+    applyGeneratorDictionaryMatches(state, matches);
+    syncDisplayMeaning(state, findNewestNonEmptyMeaningMatch(matches));
+    renderRow(state.rowId);
+  }
+}
+
+async function readGeneratorDefinitionRequests() {
+  if (!isHeartsConfigured || !await ensureAwsCredentials()) throw new Error("Database access is unavailable.");
+  const items = [];
+  let cursor;
+  do {
+    const page = await getHeartsTableClient().scan({ TableName: awsConfig.heartsTableName,
+      ConsistentRead: true, ...(cursor ? { ExclusiveStartKey: cursor } : {}) }).promise();
+    items.push(...(page.Items || [])); cursor = page.LastEvaluatedKey;
+  } while (cursor);
+  return items;
+}
+
+function getGeneratorDefinitionPicker() {
+  if (!generatorDefinitionPicker) generatorDefinitionPicker = SECRET_DEFINITION_PICKER.create({
+    client: getHeartsTableClient, table: awsConfig.heartsTableName, user: getCurrentUserId,
+    read: readGeneratorDefinitionRequests,
+    onMutation: () => { generatorRevision++; },
+    onChange: () => {
+      const rowId = generatorPickerRowId;
+      if (!generatorDefinitionPicker.isOpen()) generatorPickerRowId = null;
+      if (rowId) renderRow(rowId);
+      if (!generatorDefinitionPicker.isOpen() && generatorSync) void generatorSync.request();
+    },
+    onAssigned: item => {
+      generatorRevision++;
+      const state = rowStateById.get(generatorPickerRowId);
+      generatorPickerRowId = null;
+      if (state) {
+        state.isEditing = false;
+        applyCurrentUserMatchToState(state, item);
+      }
+      rememberGeneratorRecord(item);
+      generatorConstraints.remember(item);
+      flushPersistedRowsSave();
+      if (generatorSync) void generatorSync.request();
+    }
+  });
+  return generatorDefinitionPicker;
+}
+
+async function openGeneratorDefinitionPicker(rowId) {
+  const state = rowStateById.get(rowId);
+  if (!state?.hearted || state.saveStatus !== "idle" ||
+      generatorDefinitionPicker?.isOpen()) return;
+  state.definitionError = ""; state.saveStatus = "loading-definitions"; renderRow(rowId);
+  try {
+    const items = await readGeneratorDefinitionRequests();
+    if (!rowStateById.has(rowId)) return;
+    applyGeneratorDictionaryMatches(state, items.filter(item => item.word === state.word && item.pronunciation));
+    generatorConstraints.accept(items);
+    syncDisplayMeaning(state, findNewestNonEmptyMeaningMatch(state.wordRecords));
+    const picker = getGeneratorDefinitionPicker();
+    picker.load(items); generatorPickerRowId = rowId; state.saveStatus = "idle";
+    picker.open(state.word, state.ipa, { hearted: state.hearted });
+    const row = resultsList.querySelector(`.result-row[data-row-id="${rowId}"]`);
+    row?.querySelector(".definition-picker select")?.focus();
+  } catch (error) {
+    state.definitionError = `Could not load requested definitions: ${error.message} Try Select a definition again.`;
+  } finally {
+    state.saveStatus = "idle";
+    // Opening already rendered and focused the picker; avoid rebuilding it.
+    if (generatorPickerRowId !== rowId) renderRow(rowId);
   }
 }
 
@@ -1450,12 +1438,23 @@ function renderMeaning(row, state) {
   const isSelected = selectedRowId === state.rowId;
   const isSaving = state.saveStatus !== "idle";
   const displayMeaning = getDisplayedMeaning(state);
+  if (state.definitionError) {
+    const error = document.createElement("p");
+    error.className = "generator-definition-error";
+    error.setAttribute("role", "status"); error.textContent = state.definitionError;
+    container.appendChild(error);
+  }
 
   if (displayMeaning) {
     const definition = document.createElement("span");
     definition.className = "meaning-definition";
     definition.textContent = `— ${displayMeaning}`;
     container.appendChild(definition);
+  }
+  if (generatorPickerRowId === state.rowId && generatorDefinitionPicker?.isOpen()) {
+    const picker = generatorDefinitionPicker.render(state.word);
+    if (picker) container.appendChild(picker);
+    return;
   }
 
   const canEditMeaning =
@@ -1495,7 +1494,7 @@ function renderMeaning(row, state) {
     return;
   }
 
-  if (!isSelected) {
+  if (!isSelected && !state.hearted) {
     return;
   }
 
@@ -1503,9 +1502,16 @@ function renderMeaning(row, state) {
   link.type = "button";
   link.className = "meaning-link";
   link.dataset.action = "open-meaning-editor";
-  link.textContent = hasOwnMeaning(state) || hasMeaningText(state.draftMeaning) ? "Edit my meaning" : "Add my meaning";
+  link.textContent = hasOwnMeaning(state) || hasMeaningText(state.draftMeaning) ? "Edit my meaning" : "Write a definition";
   link.disabled = isSaving;
   container.appendChild(link);
+  if (state.hearted) {
+    const select = document.createElement("button");
+    select.type = "button"; select.className = "meaning-link";
+    select.dataset.action = "select-definition"; select.textContent = "Select a definition";
+    select.disabled = isSaving;
+    container.appendChild(select);
+  }
 }
 
 function renderRow(rowId) {
@@ -1518,6 +1524,13 @@ function renderRow(rowId) {
   if (sharedUi.deferEditorRender(row, () => renderRow(rowId))) return;
 
   row.classList.toggle("is-selected", selectedRowId === rowId);
+  const word = row.querySelector(".word");
+  if (word) {
+    for (const category of ["defined", "candidate", "undefined"]) {
+      word.classList.toggle(`is-${category}`, (state.dictionaryClassification || "undefined") === category);
+    }
+    word.title = `Dictionary state: ${state.dictionaryClassification || "undefined"}`;
+  }
   const sharedHearts = SECRET_DEFINITIONS.sharedHearts([
       ...(state.otherHeartUsers || []).map(user => ({ user, hearted: true })),
       { user: getCurrentUserId(), hearted: state.hearted }
@@ -1637,7 +1650,7 @@ async function playPronunciation(rowId) {
 
 async function handleToggleHeart(rowId) {
   const state = rowStateById.get(rowId);
-  if (!state || !isHeartsConfigured) {
+  if (!state || !isHeartsConfigured || state.saveStatus !== "idle" || generatorDefinitionPicker?.isOpen()) {
     return;
   }
 
@@ -1909,6 +1922,10 @@ function removeOldestRowsIfNeeded() {
 
     const oldestWord = oldest.dataset.word;
     const oldestRowId = oldest.dataset.rowId;
+    if (oldestRowId === generatorPickerRowId) {
+      if (!generatorDefinitionPicker.close()) break;
+      generatorPickerRowId = null;
+    }
 
     if (oldestWord) {
       generatedWords.delete(oldestWord);
@@ -1987,6 +2004,10 @@ async function handleResultListClick(event) {
   }
 
   const action = actionButton.dataset.action;
+  if (action === "select-definition") {
+    await openGeneratorDefinitionPicker(rowId);
+    return;
+  }
 
   if (action === "toggle-heart") {
     await handleToggleHeart(rowId);
@@ -2085,7 +2106,7 @@ if (clearAllBtn) {
 }
 
 generatorSync = SECRET_COOPERATIVE_REFRESH.start({
-  isBusy: () => [...rowStateById.values()].some(state => state.isEditing || state.saveStatus !== "idle") ||
+  isBusy: () => Boolean(generatorDefinitionPicker?.isOpen()) || [...rowStateById.values()].some(state => state.isEditing || state.saveStatus !== "idle") ||
     Boolean(document.activeElement && resultsList.contains(document.activeElement) &&
       document.activeElement.matches("input, textarea, select")),
   version: () => `${generatorRevision}:${generatorConstraints.enabled()}:${rowStateById.size > 0}`,
@@ -2105,6 +2126,7 @@ generatorSync = SECRET_COOPERATIVE_REFRESH.start({
   apply: items => {
     // A skipped read with no rows and normalization off is not a dictionary snapshot.
     if (rowStateById.size || generatorConstraints.enabled()) generatorConstraints.accept(items);
+    if (generatorDefinitionPicker) generatorDefinitionPicker.load(items);
     for (const state of rowStateById.values()) {
       const matches = items.filter(item => item.word === state.word && item.pronunciation);
       const own = findNewestCurrentUserMatch(matches, getCurrentUserId());
@@ -2119,10 +2141,7 @@ generatorSync = SECRET_COOPERATIVE_REFRESH.start({
         state.hasDraftCache = false;
         state.draftUpdatedTimestamp = null;
       }
-      state.otherHeartUsers = [...new Set(matches
-        .filter(item => item.hearted && SECRET_DEFINITIONS.namedUserId(item.user) &&
-          SECRET_DEFINITIONS.namedUserId(item.user) !== SECRET_DEFINITIONS.namedUserId(getCurrentUserId()))
-        .map(item => SECRET_DEFINITIONS.namedUserId(item.user)))];
+      applyGeneratorDictionaryMatches(state, matches);
       const imported = sortMatchesByMeaningDesc(matches).find(item =>
         item.user !== getCurrentUserId() && hasMeaningText(item.meaning));
       syncDisplayMeaning(state, imported || findNewestNonEmptyMeaningMatch(matches));
