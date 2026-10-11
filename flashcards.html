@@ -14,7 +14,7 @@
       <a class="page-nav-link" href="dictionary.html">Dictionary</a>
     </nav>
     <h1>Flashcards</h1>
-    <p>Practice defined words, candidates, and shared sentences. Click the card to flip it, or use Back and Next to move between cards.</p>
+    <p>Practice defined words, candidates, and shared sentences. Tap the card to flip it. Swipe left for Next or right for Back, or use the buttons below.</p>
     <fieldset class="flashcard-filters">
       <legend>Include in this round</legend>
       <label><input id="flashcardWords" type="checkbox" checked> Defined words</label>
@@ -34,6 +34,7 @@
         <span id="flashcardText" class="flashcard-text"></span>
         <span id="flashcardIpa" class="flashcard-ipa"></span>
       </button>
+      <div id="flashcardSoundBuffer" class="flashcard-sound-buffer" aria-hidden="true" hidden></div>
       <button id="flashcardPlay" class="dictionary-toggle-btn flashcard-play" type="button" aria-label="Play pronunciation" title="Play pronunciation" hidden>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
           <path d="M11 5 6 9H3v6h3l5 4V5Z M15 8a6 6 0 0 1 0 8 M18 5a10 10 0 0 1 0 14" />
@@ -77,6 +78,7 @@
   <script type="application/x-protected-script" data-protected-src="flashcard-audio.js"></script>
   <script type="application/x-protected-script" data-protected-src="flashcard-motion.js"></script>
   <script type="application/x-protected-script" data-protected-src="flashcard-state.js"></script>
+  <script type="application/x-protected-script" data-protected-src="flashcard-gestures.js"></script>
   <script type="application/x-protected-script" data-protected-src="flashcards.js"></script>
 </body>
 </html>

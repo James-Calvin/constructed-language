@@ -86,6 +86,7 @@
     el("flashcardProgress").textContent = card ? `Card ${position + 1} of ${currentRound.length}` : "";
     const face = card ? deck.face(card, flipped) : null;
     el("flashcardPlay").hidden = face?.label !== "Word" || !face.pronunciation;
+    el("flashcardSoundBuffer").hidden = el("flashcardPlay").hidden;
     el("flashcardPlay").disabled = !runtime.isPlaybackConfigured;
     el("flashcardPlay").title = runtime.isPlaybackConfigured ? "Play pronunciation" : "Pronunciation playback is unavailable";
     el("flashcardSide").textContent = face?.label || "";
@@ -276,16 +277,21 @@
       }
     }
   });
-  el("flashcardBack").addEventListener("click", () => {
+  function previousCard() {
     if (position <= 0) return;
     motion.slide(() => { position--; flipped = false; renderStudy(); }, -1);
     if (position === 0) el("flashcardFace").focus({ preventScroll: true });
-  });
-  el("flashcardNext").addEventListener("click", () => {
+  }
+  function nextCard() {
     if (!currentRound[position]) return;
     motion.slide(() => { position++; flipped = false; renderStudy(); });
     if (position >= currentRound.length) el("flashcardAgain").focus({ preventScroll: true });
-  });
+  }
+  el("flashcardBack").addEventListener("click", previousCard);
+  el("flashcardNext").addEventListener("click", nextCard);
+  el("flashcardSoundBuffer").addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); });
+  const gestures = root.SECRET_FLASHCARD_GESTURES.bind({ element: el("flashcardCard"), next: nextCard, back: previousCard,
+    exclude: target => el("flashcardSoundBuffer").contains(target) || el("flashcardPlay").contains(target) });
   el("flashcardAgain").addEventListener("click", () => {
     startRound();
     el(currentRound.length ? "flashcardFace" : "flashcardWords").focus({ preventScroll: true });
@@ -299,7 +305,7 @@
       addForm, addForm.querySelector(".flashcard-error"));
   });
   root.addEventListener("pagehide", persistState);
-  root.addEventListener("beforeunload", () => { persistState(); sync.stop(); motion.cancel(); pronunciationAudio?.dispose(); });
+  root.addEventListener("beforeunload", () => { persistState(); sync.stop(); gestures.stop(); motion.cancel(); pronunciationAudio?.dispose(); });
   const restored = stateStore.load();
   if (restored) {
     ({ round: currentRound, position, flipped, roundSelections, dataSignature, dataChanged } = restored);

@@ -47,7 +47,7 @@ class Element {
   }
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
   reset() { this.querySelectorAll('textarea').forEach(field => { field.value = ''; }); }
-  fire(type) { if (!this.disabled) return this.listeners[type]?.({ preventDefault() {}, stopPropagation() {} }); }
+  fire(type, values = {}) { if (!this.disabled) return this.listeners[type]?.({ preventDefault() {}, stopPropagation() {}, ...values }); }
 }
 async function harness(warm, options = {}) {
   let scans = 0, syncOptions, fail = false, failAudio = false, stops = 0;
@@ -105,6 +105,7 @@ async function harness(warm, options = {}) {
     SECRET_CURRENT_USER: { id: options.username || 'alice' }, SECRET_MEANING_REQUESTS: grouping,
     SECRET_FLASHCARD_STATE: { create: args => require('../flashcard-state.js').create({ ...args, storage }) },
     SECRET_FLASHCARD_MOTION: require('../flashcard-motion.js'),
+    SECRET_FLASHCARD_GESTURES: require('../flashcard-gestures.js'),
     SECRET_FLASHCARD_DECK: { ...deck, round: cards => deck.round(cards, () => 0.75) }, SECRET_FLASHCARD_SERVICE: serviceApi,
     SECRET_DICTIONARY_CACHE: { forRuntime: () => store }, scrollX: 0, scrollY: 123,
     scrollTo(x, y) { this.scrollX = x; this.scrollY = y; }, addEventListener() {},
@@ -140,6 +141,8 @@ async function run() {
   n.flashcardBack.fire('click'); assert.equal(n.flashcardProgress.textContent, 'Card 1 of 2');
   assert.equal(n.flashcardStatus.hidden, true, 'Routine cache status is not displayed');
   assert.equal(n.flashcardPlay.hidden, false);
+  assert.equal(n.flashcardSoundBuffer.hidden, false);
+  n.flashcardSoundBuffer.fire('click'); assert.equal(n.flashcardText.textContent, 'ka', 'The audio buffer is a no-op');
   await n.flashcardPlay.fire('click');
   assert.deepEqual(ui.played, [['ka', 'ka']]);
   assert.equal(n.flashcardText.textContent, 'ka', 'Playing pronunciation does not flip the card');
@@ -150,6 +153,7 @@ async function run() {
   ui.failAudio(false);
   n.flashcardFace.fire('click'); assert.equal(n.flashcardText.textContent, 'sun');
   assert.equal(n.flashcardPlay.hidden, true, 'Definition side does not reveal pronunciation');
+  assert.equal(n.flashcardSoundBuffer.hidden, true, 'The buffer is only present alongside the sound control');
   assert.equal(n.flashcardAudioStatus.hidden, true);
   assert.ok(ui.stops() > 0, 'Flipping stops pronunciation');
   n.flashcardFace.fire('click'); assert.equal(n.flashcardText.textContent, 'ka');
@@ -258,6 +262,16 @@ async function run() {
   assert.equal(cold.nodes.flashcardText.textContent, 'ka');
   assert.equal(cold.nodes.flashcardSentences.checked, false, 'Sentences start unchecked');
   assert.equal(cold.nodes.flashcardProgress.textContent, 'Card 1 of 1');
+  const swipe = await harness(true, { sentences: true });
+  const swipeCard = swipe.nodes.flashcardCard;
+  const pointer = { pointerId: 1, pointerType: 'touch', isPrimary: true, target: swipe.nodes.flashcardFace, clientX: 200, clientY: 100 };
+  swipeCard.fire('pointerdown', pointer); swipeCard.fire('pointerup', { ...pointer, clientX: 100 });
+  assert.equal(swipe.nodes.flashcardProgress.textContent, 'Card 2 of 2');
+  assert.equal(swipe.nodes.flashcardText.textContent, '<b>ka mi</b>');
+  swipeCard.fire('pointerdown', pointer); swipeCard.fire('pointerup', { ...pointer, clientX: 300 });
+  assert.equal(swipe.nodes.flashcardProgress.textContent, 'Card 1 of 2');
+  swipeCard.fire('pointerdown', pointer); swipeCard.fire('pointerup', { ...pointer, clientX: 300 });
+  assert.equal(swipe.nodes.flashcardProgress.textContent, 'Card 1 of 2', 'Swipe respects the first-card boundary');
   const resume = await harness(true, { sentences: true });
   resume.nodes.flashcardNext.fire('click'); resume.nodes.flashcardFace.fire('click');
   resume.nodes.flashcardCandidates.checked = true; resume.nodes.flashcardCandidates.fire('change');
@@ -307,7 +321,7 @@ async function run() {
   assert.match(html, /id="flashcardCandidates" type="checkbox"> Candidates/);
   assert.match(html, /id="flashcardSentences" type="checkbox"> Sentences/);
   assert.doesNotMatch(html, /flashcardFlip/);
-  assert.match(html, /<\/button>\s*<button id="flashcardPlay"/, 'Play is a sibling, not a nested button');
+  assert.match(html, /<\/button>\s*<div id="flashcardSoundBuffer"[^>]*><\/div>\s*<button id="flashcardPlay"/, 'Sound controls remain siblings, not nested buttons');
   assert.doesNotMatch(html, /flashcardRetry|Refresh \/ Retry/);
   assert.match(html, /type="application\/x-protected-script" data-protected-src="flashcards.js"/);
   assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
