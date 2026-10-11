@@ -42,6 +42,10 @@ class Element {
       return this.tagName === part;
     });
   }
+  closest(selector) {
+    if (this.matches(selector)) return this;
+    return this.parentElement?.closest(selector) || null;
+  }
   querySelectorAll(selector) {
     return this.children.flatMap(child => [...(child.matches(selector) ? [child] : []), ...child.querySelectorAll(selector)]);
   }
@@ -83,7 +87,14 @@ async function harness(warm, options = {}) {
   cacheApi.trackClient(client, () => store);
   if (warm) await store.refresh();
   const initialScans = scans;
-  const doc = { activeElement: null };
+  const docListeners = new Map();
+  const doc = { activeElement: null, addEventListener: (name, handler) => docListeners.set(name, handler),
+    removeEventListener: name => docListeners.delete(name) };
+  function key(key, values = {}) {
+    const event = { key, target: doc.activeElement, defaultPrevented: false,
+      preventDefault() { this.defaultPrevented = true; }, ...values };
+    docListeners.get('keydown')?.(event); return event;
+  }
   doc.body = new Element('body', doc); doc.activeElement = doc.body;
   const html = fs.readFileSync('flashcards.html', 'utf8');
   const nodes = {};
@@ -128,7 +139,7 @@ async function harness(warm, options = {}) {
   await flush();
   return { nodes, doc, store, database, word, sentence, options: syncOptions,
     scans: () => scans - initialScans, fail: value => { fail = value; }, played, stops: () => stops,
-    failAudio: value => { failAudio = value; }, saved };
+    failAudio: value => { failAudio = value; }, saved, key };
 }
 function findButton(root, text) { const found = root.querySelectorAll('button').find(button => button.textContent === text); assert.ok(found, text); return found; }
 async function run() {
@@ -262,6 +273,30 @@ async function run() {
   assert.equal(cold.nodes.flashcardText.textContent, 'ka');
   assert.equal(cold.nodes.flashcardSentences.checked, false, 'Sentences start unchecked');
   assert.equal(cold.nodes.flashcardProgress.textContent, 'Card 1 of 1');
+  const keyboard = await harness(true, { sentences: true });
+  assert.equal(keyboard.key(' ').defaultPrevented, true);
+  assert.equal(keyboard.nodes.flashcardText.textContent, 'sun', 'Space flips from the page background');
+  keyboard.key('ArrowRight'); assert.equal(keyboard.nodes.flashcardProgress.textContent, 'Card 2 of 2');
+  keyboard.key('ArrowLeft'); assert.equal(keyboard.nodes.flashcardProgress.textContent, 'Card 1 of 2');
+  // Returning to the first card focuses its native button: Space must not double-activate it.
+  assert.equal(keyboard.key(' ').defaultPrevented, false);
+  keyboard.doc.activeElement = keyboard.doc.body;
+  for (const modifier of ['ctrlKey', 'metaKey', 'altKey', 'shiftKey', 'repeat', 'isComposing']) {
+    keyboard.key('ArrowRight', { [modifier]: true });
+    assert.equal(keyboard.nodes.flashcardProgress.textContent, 'Card 1 of 2');
+  }
+  keyboard.nodes.flashcardSentence.focus();
+  assert.equal(keyboard.key(' ').defaultPrevented, false);
+  keyboard.key('ArrowRight'); assert.equal(keyboard.nodes.flashcardProgress.textContent, 'Card 1 of 2');
+  keyboard.nodes.flashcardCandidates.focus();
+  assert.equal(keyboard.key(' ').defaultPrevented, false);
+  keyboard.key('ArrowRight'); assert.equal(keyboard.nodes.flashcardProgress.textContent, 'Card 1 of 2', 'Checkbox keyboard behavior is unchanged');
+  keyboard.nodes.flashcardPlay.focus();
+  assert.equal(keyboard.key(' ').defaultPrevented, false, 'Space on Play remains native audio activation');
+  keyboard.doc.activeElement = keyboard.doc.body;
+  keyboard.key('ArrowRight'); keyboard.key('ArrowRight');
+  assert.equal(keyboard.nodes.flashcardAgain.hidden, false, 'Keyboard navigation reaches the completed round');
+  keyboard.key('ArrowLeft'); assert.equal(keyboard.nodes.flashcardProgress.textContent, 'Card 2 of 2');
   const swipe = await harness(true, { sentences: true });
   const swipeCard = swipe.nodes.flashcardCard;
   const pointer = { pointerId: 1, pointerType: 'touch', isPrimary: true, target: swipe.nodes.flashcardFace, clientX: 200, clientY: 100 };

@@ -29,7 +29,7 @@
     <section aria-label="Study cards" class="flashcard-study">
       <p id="flashcardProgress" role="status"></p>
       <div id="flashcardCard" class="flashcard-card">
-      <button id="flashcardFace" type="button" class="flashcard-face" title="Flip card" aria-live="polite" aria-atomic="true">
+      <button id="flashcardFace" type="button" class="flashcard-face" title="Flip card" aria-keyshortcuts="Space Enter" aria-live="polite" aria-atomic="true">
         <span id="flashcardSide" class="flashcard-side"></span>
         <span id="flashcardText" class="flashcard-text"></span>
         <span id="flashcardIpa" class="flashcard-ipa"></span>
@@ -43,10 +43,11 @@
       </div>
       <p id="flashcardAudioStatus" class="flashcard-error" role="status" hidden></p>
       <div class="flashcard-actions">
-        <button id="flashcardBack" class="dictionary-toggle-btn" type="button">Back</button>
-        <button id="flashcardNext" class="dictionary-toggle-btn" type="button">Next</button>
+        <button id="flashcardBack" class="dictionary-toggle-btn" type="button" aria-keyshortcuts="ArrowLeft">Back</button>
+        <button id="flashcardNext" class="dictionary-toggle-btn" type="button" aria-keyshortcuts="ArrowRight">Next</button>
         <button id="flashcardAgain" class="dictionary-toggle-btn" type="button" hidden>Go again</button>
       </div>
+      <p class="flashcard-keyboard-hint">Keyboard: ← / → for Back / Next, Space to flip. Focused controls keep their normal behavior; use Tab and Enter to activate them.</p>
     </section>
     <details id="flashcardManage" class="flashcard-manage">
       <summary>Manage sentence cards</summary>

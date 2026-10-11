@@ -289,6 +289,24 @@
   }
   el("flashcardBack").addEventListener("click", previousCard);
   el("flashcardNext").addEventListener("click", nextCard);
+  function keyboardControl(event) {
+    if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat ||
+      event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || editing || saving) return;
+    const target = event.target;
+    if (el("flashcardManage").contains(target) || target?.isContentEditable ||
+      target?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox'], [role='combobox'], [role='slider']")) return;
+    if (!currentRound.length) return;
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      if (event.key === "ArrowLeft") previousCard(); else nextCard();
+    } else if ((event.key === " " || event.key === "Spacebar") && currentRound[position]) {
+      // Native buttons/links retain their Space activation. In particular, the
+      // sound button must play audio rather than also triggering a card flip.
+      if (target?.closest?.("button, a, summary, [role='button'], [role='link']")) return;
+      event.preventDefault(); flipCard();
+    }
+  }
+  document.addEventListener("keydown", keyboardControl);
   el("flashcardSoundBuffer").addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); });
   const gestures = root.SECRET_FLASHCARD_GESTURES.bind({ element: el("flashcardCard"), next: nextCard, back: previousCard,
     exclude: target => el("flashcardSoundBuffer").contains(target) || el("flashcardPlay").contains(target) });
@@ -305,7 +323,10 @@
       addForm, addForm.querySelector(".flashcard-error"));
   });
   root.addEventListener("pagehide", persistState);
-  root.addEventListener("beforeunload", () => { persistState(); sync.stop(); gestures.stop(); motion.cancel(); pronunciationAudio?.dispose(); });
+  root.addEventListener("beforeunload", () => {
+    persistState(); sync.stop(); gestures.stop(); motion.cancel(); pronunciationAudio?.dispose();
+    document.removeEventListener("keydown", keyboardControl);
+  });
   const restored = stateStore.load();
   if (restored) {
     ({ round: currentRound, position, flipped, roundSelections, dataSignature, dataChanged } = restored);
