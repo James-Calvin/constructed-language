@@ -2,6 +2,86 @@
   box-sizing: border-box;
 }
 
+.flashcard-filters,
+.flashcard-actions,
+.flashcard-sync {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.flashcard-filters {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin: 1rem 0;
+}
+
+.flashcard-sync { justify-content: space-between; }
+.flashcard-sync p { flex: 1 1 15rem; }
+.flashcard-study { margin: 1rem 0 2rem; }
+.flashcard-face {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 17rem;
+  padding: clamp(1rem, 4vw, 2.5rem);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--bg-panel);
+  text-align: center;
+  margin-bottom: 1rem;
+}
+.flashcard-text {
+  font-size: clamp(1.35rem, 4vw, 2rem);
+  line-height: 1.5;
+  margin: 0.75rem 0;
+}
+.flashcard-text,
+.flashcard-saved h3,
+.flashcard-translation {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.flashcard-side,
+.flashcard-ipa,
+.flashcard-attribution,
+.flashcard-sync,
+#flashcardUpdates {
+  color: var(--text-muted);
+}
+.flashcard-attribution { font-size: 0.85rem; }
+.flashcard-manage { margin: 2rem 0; }
+.flashcard-manage summary { cursor: pointer; padding: 0.75rem 0; }
+.flashcard-saved,
+.flashcard-form {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin: 1rem 0;
+}
+.flashcard-form label { display: block; margin: 0.75rem 0 0.35rem; }
+.flashcard-form textarea {
+  display: block;
+  width: 100%;
+  resize: vertical;
+  padding: 0.7rem;
+  margin: 0.35rem 0 0.75rem;
+  font: inherit;
+  color: var(--text-main);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.flashcards-page :is(button, textarea, input, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.flashcards-page button { min-height: 44px; }
+.flashcards-page button:disabled { opacity: 0.55; cursor: wait; }
+.flashcard-error { color: #ff9ca5; }
+.flashcards-page [hidden] { display: none !important; }
+
 html.auth-locked body > :not(.access-gate) {
   display: none !important;
 }

@@ -91,6 +91,14 @@ For diagnostics, set `sessionStorage.setItem('secret.performance.debug', '1')` i
 - [x] Add independent start, all-position, and end normalization with per-setting Defined, Candidates, and Undefined populations. Favor underrepresented symbols using separate vowel/consonant count baselines.
 - [x] Apply weighted choices only to rule-valid completions; reuse cooperative dictionary refresh, preserve controls, and retain successful counts on read failures.
 
+## Shared flashcards
+
+- [x] Study Defined words and shared sentence/translation cards with shuffled rounds, randomized starting sides, Flip/Next, and page-local deck filters.
+- [x] Allow either named user to manage shared sentence cards, with attribution, conditional-write conflict checks, delete confirmation, and retained failed-save drafts.
+- [x] Reuse the shared snapshot cache and cooperative refresh; freeze active rounds and preserve editing state.
+- [x] Add deterministic deck, service, cached-loading, and UI regressions.
+- [ ] Manually verify live AWS persistence and desktop/mobile browser interaction after deployment.
+
 ## Deferred
 
 Full undo and revision history are deferred. Separate shared-heart filter work is deferred in favor of the Candidate approval workflow and sunrise-yellow multi-heart styling.

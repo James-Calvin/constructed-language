@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flashcards</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="auth.js"></script>
+</head>
+<body>
+  <main class="app app-dictionary flashcards-page">
+    <nav class="page-nav page-nav-split" aria-label="Main navigation">
+      <a class="page-nav-link" href="index.html">Back to Generator</a>
+      <a class="page-nav-link" href="dictionary.html">Dictionary</a>
+    </nav>
+    <h1>Flashcards</h1>
+    <p>Practice defined words and shared sentences. Flip to check the other side, or skip with Next.</p>
+    <fieldset class="flashcard-filters">
+      <legend>Include in this round</legend>
+      <label><input id="flashcardWords" type="checkbox" checked> Words</label>
+      <label><input id="flashcardSentences" type="checkbox" checked> Sentences</label>
+    </fieldset>
+    <div class="flashcard-sync">
+      <p id="flashcardStatus" role="status">Loading cards…</p>
+      <button id="flashcardRetry" class="dictionary-toggle-btn" type="button">Refresh / Retry</button>
+    </div>
+    <p id="flashcardUpdates" role="status"></p>
+    <section aria-label="Study cards" class="flashcard-study">
+      <p id="flashcardProgress" role="status"></p>
+      <div class="flashcard-face" aria-live="polite" aria-atomic="true">
+        <p id="flashcardSide" class="flashcard-side"></p>
+        <p id="flashcardText" class="flashcard-text"></p>
+        <p id="flashcardIpa" class="flashcard-ipa"></p>
+      </div>
+      <div class="flashcard-actions">
+        <button id="flashcardFlip" class="dictionary-toggle-btn" type="button">Flip</button>
+        <button id="flashcardNext" class="dictionary-toggle-btn" type="button">Next</button>
+        <button id="flashcardAgain" class="dictionary-toggle-btn" type="button" hidden>Study again</button>
+      </div>
+    </section>
+    <details id="flashcardManage" class="flashcard-manage">
+      <summary>Manage sentence cards</summary>
+      <p>Sentence cards are shared. Either user can edit or delete them.</p>
+      <form id="flashcardAdd" class="flashcard-form">
+        <h2>Add a sentence card</h2>
+        <label for="flashcardSentence">Sentence</label>
+        <textarea id="flashcardSentence" required maxlength="4000" rows="3"></textarea>
+        <label for="flashcardTranslation">Translation</label>
+        <textarea id="flashcardTranslation" required maxlength="4000" rows="3"></textarea>
+        <div class="flashcard-actions">
+          <button class="dictionary-toggle-btn" type="submit">Add card</button>
+          <button id="flashcardClear" class="dictionary-toggle-btn" type="button">Clear draft</button>
+        </div>
+        <p class="flashcard-error" role="status"></p>
+      </form>
+      <h2>Shared sentence cards</h2>
+      <div id="flashcardList"></div>
+    </details>
+  </main>
+  <script type="application/x-protected-script" data-protected-src="aws-config.js"></script>
+  <script type="application/x-protected-script" data-protected-src="https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js"></script>
+  <script type="application/x-protected-script" data-protected-src="shared.js"></script>
+  <script type="application/x-protected-script" data-protected-src="dictionary-cache.js"></script>
+  <script type="application/x-protected-script" data-protected-src="meaning-requests.js"></script>
+  <script type="application/x-protected-script" data-protected-src="cooperative-refresh.js"></script>
+  <script type="application/x-protected-script" data-protected-src="flashcard-deck.js"></script>
+  <script type="application/x-protected-script" data-protected-src="flashcard-service.js"></script>
+  <script type="application/x-protected-script" data-protected-src="flashcards.js"></script>
+</body>
+</html>
