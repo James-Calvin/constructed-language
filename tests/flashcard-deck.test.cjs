@@ -23,6 +23,12 @@ assert.equal(cards[0].pronunciation, 'ɛtos');
 assert.equal(deck.cards(raw, { words: false }).length, 1);
 assert.equal(deck.cards(raw, { sentences: false }).length, 2);
 assert.equal(deck.cards(raw, { words: false, sentences: false }).length, 0);
+assert.deepEqual(deck.cards(raw, { words: false, candidates: true, sentences: false }).map(card => card.id), ['word:ka']);
+assert.deepEqual(deck.cards(raw, { candidates: true, sentences: false }).map(card => card.id), ['word:etos', 'word:ka', 'word:mi']);
+const latestCandidate = raw.concat({ rowId: 'candidate-update', timestamp: 4, word: 'etos', pronunciation: 'etos',
+  meaning: 'heat', definitionReview: { status: 'candidate' } });
+assert.equal(deck.cards(latestCandidate).some(card => card.id === 'word:etos'), false);
+assert.equal(deck.cards(latestCandidate, { words: false, candidates: true, sentences: false }).find(card => card.id === 'word:etos').back, 'heat');
 assert.equal(deck.validCard(sentence), true);
 assert.equal(deck.validCard({ ...sentence, rowId: 'bad' }), false);
 assert.equal(grouping.groupWords(raw).length, 4, 'Sentence metadata is not a dictionary word');

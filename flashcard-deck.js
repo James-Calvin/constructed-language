@@ -11,10 +11,10 @@
       typeof card.revision === "string" && card.revision && typeof card.author === "string" &&
       Number.isFinite(card.createdAt) && typeof card.editor === "string" && Number.isFinite(card.editedAt));
   }
-  function cards(rows, { words = true, sentences = true, groupedWords } = {}) {
+  function cards(rows, { words = true, candidates = false, sentences = true, groupedWords } = {}) {
     return [
-      ...(words ? (groupedWords || grouping.groupWords(rows)).filter(word => word.hasDefinition &&
-        word.definitionReview?.status !== "candidate").map(word => ({
+      ...(words || candidates ? (groupedWords || grouping.groupWords(rows)).filter(word => word.hasDefinition &&
+        (word.definitionReview?.status === "candidate" ? candidates : words)).map(word => ({
         id: `word:${word.word}`, type: "word", front: word.word, back: word.meaning,
         pronunciation: word.pronunciation
       })) : []),

@@ -93,7 +93,8 @@ For diagnostics, set `sessionStorage.setItem('secret.performance.debug', '1')` i
 
 ## Shared flashcards
 
-- [x] Study Defined words and shared sentence/translation cards with shuffled rounds, randomized starting sides, Flip/Next, and page-local deck filters.
+- [x] Study Defined words, optional Candidates, and shared sentence/translation cards with randomized starting sides, click-to-flip, and Back/Next controls.
+- [x] Restore browser-local rounds, selections, position, and displayed side per username/configuration. Only manual Shuffle applies changed selections or card data; show a yellow warning and explanation while changes are pending.
 - [x] Allow either named user to manage shared sentence cards, with attribution, conditional-write conflict checks, delete confirmation, and retained failed-save drafts.
 - [x] Reuse the shared snapshot cache and cooperative refresh; freeze active rounds and preserve editing state.
 - [x] Add deterministic deck, service, cached-loading, and UI regressions.

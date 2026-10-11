@@ -14,6 +14,11 @@ class Element {
     this.tagName = tag; this.doc = doc; this.children = []; this.listeners = {}; this.dataset = {};
     this.value = ''; this.checked = false; this.hidden = false; this.disabled = false; this.className = '';
     this.selectionStart = 0; this.selectionEnd = 0; this.scrollTop = 0;
+    this.classList = { toggle: (name, enabled) => {
+      const names = new Set(this.className.split(' ').filter(Boolean));
+      if (enabled) names.add(name); else names.delete(name);
+      this.className = [...names].join(' ');
+    } };
   }
   set textContent(value) { this._text = value; this.replaceChildren(); }
   get textContent() { return this._text || ''; }
@@ -44,7 +49,7 @@ class Element {
   reset() { this.querySelectorAll('textarea').forEach(field => { field.value = ''; }); }
   fire(type) { if (!this.disabled) return this.listeners[type]?.({ preventDefault() {}, stopPropagation() {} }); }
 }
-async function harness(warm) {
+async function harness(warm, options = {}) {
   let scans = 0, syncOptions, fail = false, failAudio = false, stops = 0;
   const played = [];
   const sentence = { rowId: '__secret_flashcard__::one', timestamp: 0, flashcardData: {
@@ -52,7 +57,10 @@ async function harness(warm) {
     author: 'alice', editor: 'alice', createdAt: 1, editedAt: 1
   } };
   const word = { rowId: 'word', timestamp: 1, word: 'ka', pronunciation: 'ka', meaning: 'sun' };
-  const database = new Map([word, sentence].map(row => [row.rowId, row]));
+  const database = options.database || new Map([word, sentence].map(row => [row.rowId, row]));
+  const saved = options.saved || new Map();
+  const storage = options.storage || { getItem: key => saved.get(key) || null,
+    setItem: (key, value) => saved.set(key, value), removeItem: key => saved.delete(key) };
   const client = {
     scan: () => ({ promise: async () => { scans++; return { Items: structuredClone([...database.values()]) }; } }),
     put: params => ({ promise: async () => {
@@ -93,7 +101,8 @@ async function harness(warm) {
   doc.getElementById = id => nodes[id];
   const context = {
     console, document: doc, crypto: require('node:crypto').webcrypto, Math: Object.assign(Object.create(Math), { random: () => 0.75 }),
-    SECRET_CURRENT_USER: { id: 'alice' }, SECRET_MEANING_REQUESTS: grouping,
+    SECRET_CURRENT_USER: { id: options.username || 'alice' }, SECRET_MEANING_REQUESTS: grouping,
+    SECRET_FLASHCARD_STATE: { create: args => require('../flashcard-state.js').create({ ...args, storage }) },
     SECRET_FLASHCARD_MOTION: require('../flashcard-motion.js'),
     SECRET_FLASHCARD_DECK: { ...deck, round: cards => deck.round(cards, () => 0.75) }, SECRET_FLASHCARD_SERVICE: serviceApi,
     SECRET_DICTIONARY_CACHE: { forRuntime: () => store }, scrollX: 0, scrollY: 123,
@@ -117,7 +126,7 @@ async function harness(warm) {
   await flush();
   return { nodes, doc, store, database, word, sentence, options: syncOptions,
     scans: () => scans - initialScans, fail: value => { fail = value; }, played, stops: () => stops,
-    failAudio: value => { failAudio = value; } };
+    failAudio: value => { failAudio = value; }, saved };
 }
 function findButton(root, text) { const found = root.querySelectorAll('button').find(button => button.textContent === text); assert.ok(found, text); return found; }
 async function run() {
@@ -148,7 +157,9 @@ async function run() {
   const changed = { ...ui.word, meaning: 'bright sun' };
   ui.store.upsert(changed); ui.options.apply(ui.store.peek());
   assert.equal(n.flashcardText.textContent, 'sun', 'Background refresh freezes the current round');
-  assert.match(n.flashcardUpdates.textContent, /next round/);
+  assert.equal(n.flashcardUpdates.textContent, 'Words or definitions have changed. Shuffle to update.');
+  assert.equal(n.flashcardShuffle.textContent, '⚠️ Shuffle');
+  assert.match(n.flashcardShuffle.className, /flashcard-shuffle-pending/);
   n.flashcardNext.fire('click'); assert.equal(n.flashcardText.textContent, '<b>ka mi</b>');
   assert.equal(n.flashcardBack.disabled, false);
   n.flashcardBack.fire('click');
@@ -176,8 +187,22 @@ async function run() {
   n.flashcardAgain.fire('click'); n.flashcardFace.fire('click');
   assert.equal(n.flashcardText.textContent, 'bright sun');
   n.flashcardWords.checked = false; n.flashcardSentences.checked = false; n.flashcardWords.fire('change');
-  assert.match(n.flashcardText.textContent, /Select Words or Sentences/);
+  assert.equal(n.flashcardText.textContent, 'bright sun', 'Selection changes do not reset the current card or side');
+  assert.equal(n.flashcardUpdates.textContent, 'Your selection has changed. Shuffle the deck for it to take effect.');
+  n.flashcardShuffle.fire('click');
+  assert.match(n.flashcardText.textContent, /Select Defined words, Candidates, or Sentences/);
+  assert.equal(n.flashcardCandidates.checked, false, 'Candidates start unchecked');
+  const candidate = { rowId: 'candidate', timestamp: 1, word: 'etos', pronunciation: 'etos', meaning: 'hot', definitionReview: { status: 'candidate' } };
+  ui.store.upsert(candidate); ui.options.apply(ui.store.peek());
+  n.flashcardCandidates.checked = true; n.flashcardCandidates.fire('change');
+  assert.equal(n.flashcardUpdates.textContent, 'Words or definitions have changed. Shuffle to update.', 'Data changes take precedence over selection changes');
+  n.flashcardShuffle.fire('click');
+  assert.equal(n.flashcardProgress.textContent, 'Card 1 of 1', 'Candidates can be studied independently');
+  assert.equal(n.flashcardText.textContent, 'etos');
+  n.flashcardFace.fire('click'); assert.equal(n.flashcardText.textContent, 'hot');
+  n.flashcardCandidates.checked = false; n.flashcardCandidates.fire('change');
   n.flashcardSentences.checked = true; n.flashcardSentences.fire('change');
+  n.flashcardShuffle.fire('click');
   assert.equal(n.flashcardProgress.textContent, 'Card 1 of 1');
   n.flashcardManage.open = true;
   n.flashcardSentence.value = 'draft'; n.flashcardSentence.selectionStart = 2; n.flashcardSentence.focus();
@@ -206,17 +231,22 @@ async function run() {
   const reopened = n.flashcardList.querySelector('form'); reopened.querySelectorAll('textarea')[0].value = 'new sentence';
   reopened.fire('submit'); await flush();
   assert.equal(ui.database.get(ui.sentence.rowId).flashcardData.sentence, 'new sentence');
-  assert.equal(n.flashcardText.textContent, 'new sentence', 'Local saves start a new round');
+  assert.equal(n.flashcardText.textContent, '<b>ka mi</b>', 'Local saves do not replace the current round');
+  assert.equal(n.flashcardUpdates.textContent, 'Words or definitions have changed. Shuffle to update.');
+  n.flashcardShuffle.fire('click'); assert.equal(n.flashcardText.textContent, 'new sentence');
   assert.equal(n.flashcardManage.open, true);
   findButton(n.flashcardList, 'Delete').fire('click'); assert.ok(ui.options.isBusy());
   findButton(n.flashcardList, 'Cancel').fire('click'); assert.ok(ui.database.has(ui.sentence.rowId));
   findButton(n.flashcardList, 'Delete').fire('click');
   findButton(n.flashcardList, 'Confirm delete').fire('click'); await flush();
   assert.equal(ui.database.has(ui.sentence.rowId), false);
+  assert.equal(n.flashcardText.textContent, 'new sentence', 'Deleted cards remain in the frozen round until Shuffle');
+  n.flashcardShuffle.fire('click');
   assert.match(n.flashcardText.textContent, /No cards/);
   n.flashcardSentence.value = 'ka'; n.flashcardTranslation.value = 'sun'; addSubmit(n).fire('submit'); await flush();
   assert.equal(n.flashcardSentence.value, ''); assert.equal(n.flashcardTranslation.value, '');
   assert.equal(ui.database.size, 2);
+  n.flashcardShuffle.fire('click');
   ui.options.onError(); assert.match(n.flashcardStatus.textContent, /last successful data/);
   assert.equal(n.flashcardStatus.hidden, false, 'Read failures are still visible');
   ui.options.onSuccess(); assert.equal(n.flashcardStatus.hidden, true);
@@ -225,11 +255,49 @@ async function run() {
   const cold = await harness(false);
   assert.equal(cold.scans(), 1, 'Cold study uses one shared scan');
   assert.equal(cold.nodes.flashcardText.textContent, 'ka');
+  const resume = await harness(true);
+  resume.nodes.flashcardNext.fire('click'); resume.nodes.flashcardFace.fire('click');
+  resume.nodes.flashcardCandidates.checked = true; resume.nodes.flashcardCandidates.fire('change');
+  const returned = await harness(true, { saved: resume.saved, database: resume.database });
+  assert.equal(returned.nodes.flashcardProgress.textContent, 'Card 2 of 2');
+  assert.equal(returned.nodes.flashcardText.textContent, 'my sun', 'Returning restores the displayed side');
+  assert.equal(returned.nodes.flashcardCandidates.checked, true, 'Pending selections restore separately from the frozen deck');
+  assert.equal(returned.nodes.flashcardUpdates.textContent, 'Your selection has changed. Shuffle the deck for it to take effect.');
+  returned.nodes.flashcardCandidates.checked = false; returned.nodes.flashcardCandidates.fire('change');
+  assert.equal(returned.nodes.flashcardShuffle.textContent, 'Shuffle', 'Reverting selections clears their warning');
+  returned.nodes.flashcardCandidates.checked = true; returned.nodes.flashcardCandidates.fire('change');
+  returned.nodes.flashcardBack.fire('click'); assert.equal(returned.nodes.flashcardText.textContent, 'ka', 'Saved order is retained');
+  returned.nodes.flashcardNext.fire('click'); returned.nodes.flashcardNext.fire('click');
+  const completed = await harness(true, { saved: resume.saved, database: resume.database });
+  assert.match(completed.nodes.flashcardText.textContent, /Round complete/);
+  assert.equal(completed.nodes.flashcardAgain.hidden, false);
+  resume.database.set(resume.word.rowId, { ...resume.word, meaning: 'changed while away' });
+  const updated = await harness(true, { saved: resume.saved, database: resume.database });
+  assert.equal(updated.nodes.flashcardUpdates.textContent, 'Words or definitions have changed. Shuffle to update.');
+  updated.nodes.flashcardAgain.fire('click'); updated.nodes.flashcardFace.fire('click');
+  assert.equal(updated.nodes.flashcardText.textContent, 'sun', 'Restart round does not reshuffle or adopt changed data');
+  updated.nodes.flashcardShuffle.fire('click'); updated.nodes.flashcardFace.fire('click');
+  assert.equal(updated.nodes.flashcardText.textContent, 'changed while away');
+  assert.equal(updated.nodes.flashcardShuffle.textContent, 'Shuffle');
+  assert.doesNotMatch(updated.nodes.flashcardShuffle.className, /flashcard-shuffle-pending/);
+  updated.nodes.flashcardWords.checked = false; updated.nodes.flashcardCandidates.checked = false;
+  updated.nodes.flashcardSentences.checked = false; updated.nodes.flashcardWords.fire('change');
+  updated.nodes.flashcardShuffle.fire('click');
+  const empty = await harness(true, { saved: resume.saved, database: resume.database });
+  assert.match(empty.nodes.flashcardText.textContent, /Select Defined words/);
+  assert.equal(empty.nodes.flashcardProgress.textContent, '');
+  const otherUser = await harness(true, { saved: resume.saved, username: 'bob' });
+  assert.equal(otherUser.nodes.flashcardWords.checked, true, 'Other usernames do not inherit the saved selections');
+  const deniedStorage = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); }, removeItem() {} };
+  const denied = await harness(true, { storage: deniedStorage });
+  denied.nodes.flashcardNext.fire('click'); assert.equal(denied.nodes.flashcardProgress.textContent, 'Card 2 of 2');
   const html = fs.readFileSync('flashcards.html', 'utf8');
   assert.match(html, /src="auth.js"/);
   assert.match(html, /<button id="flashcardFace" type="button"/);
   assert.match(html, /id="flashcardShuffle"/);
   assert.match(html, /id="flashcardBack"/);
+  assert.match(html, /id="flashcardWords"[^>]*checked> Defined words/);
+  assert.match(html, /id="flashcardCandidates" type="checkbox"> Candidates/);
   assert.doesNotMatch(html, /flashcardFlip/);
   assert.match(html, /<\/button>\s*<button id="flashcardPlay"/, 'Play is a sibling, not a nested button');
   assert.doesNotMatch(html, /flashcardRetry|Refresh \/ Retry/);

@@ -14,10 +14,11 @@
       <a class="page-nav-link" href="dictionary.html">Dictionary</a>
     </nav>
     <h1>Flashcards</h1>
-    <p>Practice defined words and shared sentences. Click the card to flip it, or use Back and Next to move between cards.</p>
+    <p>Practice defined words, candidates, and shared sentences. Click the card to flip it, or use Back and Next to move between cards.</p>
     <fieldset class="flashcard-filters">
       <legend>Include in this round</legend>
-      <label><input id="flashcardWords" type="checkbox" checked> Words</label>
+      <label><input id="flashcardWords" type="checkbox" checked> Defined words</label>
+      <label><input id="flashcardCandidates" type="checkbox"> Candidates</label>
       <label><input id="flashcardSentences" type="checkbox" checked> Sentences</label>
     </fieldset>
     <div class="flashcard-sync">
@@ -43,7 +44,7 @@
       <div class="flashcard-actions">
         <button id="flashcardBack" class="dictionary-toggle-btn" type="button">Back</button>
         <button id="flashcardNext" class="dictionary-toggle-btn" type="button">Next</button>
-        <button id="flashcardAgain" class="dictionary-toggle-btn" type="button" hidden>Study again</button>
+        <button id="flashcardAgain" class="dictionary-toggle-btn" type="button" hidden>Restart round</button>
       </div>
     </section>
     <details id="flashcardManage" class="flashcard-manage">
@@ -75,6 +76,7 @@
   <script type="application/x-protected-script" data-protected-src="flashcard-service.js"></script>
   <script type="application/x-protected-script" data-protected-src="flashcard-audio.js"></script>
   <script type="application/x-protected-script" data-protected-src="flashcard-motion.js"></script>
+  <script type="application/x-protected-script" data-protected-src="flashcard-state.js"></script>
   <script type="application/x-protected-script" data-protected-src="flashcards.js"></script>
 </body>
 </html>

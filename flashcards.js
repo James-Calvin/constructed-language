@@ -10,6 +10,8 @@
   const el = id => document.getElementById(id);
   const addForm = el("flashcardAdd");
   const motion = root.SECRET_FLASHCARD_MOTION.create({ element: el("flashcardCard") });
+  const stateStore = root.SECRET_FLASHCARD_STATE.create({ scope: [runtime.awsConfig.region,
+    runtime.awsConfig.identityPoolId, runtime.awsConfig.heartsTableName, root.SECRET_CURRENT_USER?.id] });
   let pronunciationAudio = null, audioVersion = 0;
   function setStatus(text = "") {
     el("flashcardStatus").textContent = text;
@@ -24,7 +26,8 @@
     el("flashcardAudioStatus").hidden = true;
   }
   let rows = [], groupedWords = [], loaded = false, currentRound = [], position = 0, flipped = false;
-  let roundSignature = "", editing = null, saving = false, revision = 0;
+  let roundSelections = null, dataSignature = "", latestDataSignature = "", dataChanged = false;
+  let initialized = false, editing = null, saving = false, revision = 0;
   const fingerprint = root.SECRET_COOPERATIVE_REFRESH.fingerprint;
   function node(tag, text, className) {
     const element = document.createElement(tag);
@@ -38,15 +41,36 @@
     element.addEventListener("click", action);
     return element;
   }
+  function selections() {
+    return { words: el("flashcardWords").checked, candidates: el("flashcardCandidates").checked,
+      sentences: el("flashcardSentences").checked };
+  }
   function available() {
-    return deck.cards(rows, { words: el("flashcardWords").checked,
-      sentences: el("flashcardSentences").checked, groupedWords });
+    return deck.cards(rows, { ...selections(), groupedWords });
+  }
+  function persistState() {
+    if (!initialized) return;
+    stateStore.save({ round: currentRound, selections: selections(), roundSelections,
+      position, flipped, dataSignature, dataChanged });
+  }
+  function updateWarnings() {
+    if (initialized && loaded) dataChanged = latestDataSignature !== dataSignature;
+    const selectionChanged = initialized && fingerprint([selections()]) !== fingerprint([roundSelections]);
+    const pending = dataChanged || selectionChanged;
+    el("flashcardShuffle").textContent = pending ? "⚠️ Shuffle" : "Shuffle";
+    el("flashcardShuffle").classList.toggle("flashcard-shuffle-pending", Boolean(pending));
+    el("flashcardUpdates").textContent = dataChanged ? "Words or definitions have changed. Shuffle to update."
+      : selectionChanged ? "Your selection has changed. Shuffle the deck for it to take effect." : "";
+    persistState();
   }
   function loadSnapshot(snapshot) {
     rows = snapshot;
     // A scan may finish while refresh is deferred for editing. Keep this view's
     // word and sentence sources on the same applied revision, not the newer cache.
     groupedWords = store?.peek() === snapshot ? store.words() : root.SECRET_MEANING_REQUESTS.groupWords(snapshot);
+    const categories = new Map(groupedWords.map(word => [word.word, word.definitionReview?.status === "candidate" ? "candidate" : "defined"]));
+    latestDataSignature = fingerprint(deck.cards(rows, { candidates: true, groupedWords }).map(card =>
+      card.type === "word" ? { ...card, category: categories.get(card.front) } : card));
     loaded = true; service.load(rows);
   }
   function renderStudy() {
@@ -66,19 +90,22 @@
     el("flashcardSide").textContent = face?.label || "";
     el("flashcardIpa").textContent = face?.pronunciation || "";
     el("flashcardIpa").hidden = !face?.pronunciation;
-    el("flashcardText").textContent = face ? face.text : !loaded ? "Loading cards…"
-      : !el("flashcardWords").checked && !el("flashcardSentences").checked ? "Select Words or Sentences to start a round."
-      : currentRound.length ? "Round complete! Ready for another?"
-      : "No cards in this selection yet. Define words in the dictionary or add a shared sentence below.";
+    el("flashcardText").textContent = face ? face.text : !loaded && !initialized ? "Loading cards…"
+      : currentRound.length ? "Round complete! Restart this round or Shuffle for a new deck."
+      : roundSelections && !Object.values(roundSelections).some(Boolean)
+        ? "Select Defined words, Candidates, or Sentences, then Shuffle to start a round."
+      : "No cards in this round. Change your selections or add cards, then Shuffle to update.";
+    persistState();
   }
   function startRound() {
+    if (!loaded) return;
     motion.cancel();
     const cards = available();
     currentRound = deck.round(cards);
-    roundSignature = fingerprint(cards);
+    initialized = true;
+    roundSelections = selections(); dataSignature = latestDataSignature; dataChanged = false;
     position = 0; flipped = false;
-    el("flashcardUpdates").textContent = "";
-    renderStudy();
+    renderStudy(); updateWarnings();
   }
   function actionButton(text, row, action) {
     const control = button(text, action);
@@ -172,7 +199,7 @@
       editing = null;
       if (form === addForm) addForm.reset();
       loadSnapshot(store?.peek() || service.list());
-      startRound(); renderManagement(); succeeded = true;
+      updateWarnings(); renderManagement(); succeeded = true;
     } catch (failure) { error.textContent = failure.message; }
     finally {
       saving = false; revision++;
@@ -196,12 +223,10 @@
       document.activeElement?.matches(".flashcard-manage textarea");
   }
   function applySnapshot(snapshot) {
-    const first = !loaded;
     loadSnapshot(snapshot);
     renderManagement(); updateControls();
-    if (first || !currentRound.length) startRound();
-    else el("flashcardUpdates").textContent = fingerprint(available()) !== roundSignature
-      ? "Cards have changed. Your current round stays the same; changes appear in the next round." : "";
+    if (!initialized) startRound();
+    else { el("flashcardShuffle").disabled = false; updateWarnings(); }
   }
   const sync = root.SECRET_COOPERATIVE_REFRESH.start({
     read: async () => {
@@ -215,8 +240,9 @@
       ? "Could not refresh. Using the last successful data; retrying automatically while visible and focused."
       : "Could not load cards. Retrying automatically while visible and focused."); }
   });
-  el("flashcardWords").addEventListener("change", startRound);
-  el("flashcardSentences").addEventListener("change", startRound);
+  el("flashcardWords").addEventListener("change", updateWarnings);
+  el("flashcardCandidates").addEventListener("change", updateWarnings);
+  el("flashcardSentences").addEventListener("change", updateWarnings);
   function flipCard() {
     if (!currentRound[position]) return;
     stopAudio();
@@ -256,7 +282,7 @@
     if (position >= currentRound.length) el("flashcardAgain").focus({ preventScroll: true });
   });
   el("flashcardAgain").addEventListener("click", () => {
-    startRound();
+    motion.cancel(); position = 0; flipped = false; renderStudy();
     el(currentRound.length ? "flashcardFace" : "flashcardWords").focus({ preventScroll: true });
   });
   el("flashcardShuffle").addEventListener("click", startRound);
@@ -267,7 +293,17 @@
     void mutate(() => service.add(el("flashcardSentence").value, el("flashcardTranslation").value),
       addForm, addForm.querySelector(".flashcard-error"));
   });
-  root.addEventListener("beforeunload", () => { sync.stop(); motion.cancel(); pronunciationAudio?.dispose(); });
+  root.addEventListener("pagehide", persistState);
+  root.addEventListener("beforeunload", () => { persistState(); sync.stop(); motion.cancel(); pronunciationAudio?.dispose(); });
+  const restored = stateStore.load();
+  if (restored) {
+    ({ round: currentRound, position, flipped, roundSelections, dataSignature, dataChanged } = restored);
+    initialized = true;
+    el("flashcardWords").checked = restored.selections.words;
+    el("flashcardCandidates").checked = restored.selections.candidates;
+    el("flashcardSentences").checked = restored.selections.sentences;
+    renderStudy(); updateWarnings();
+  }
   const cached = store?.peek();
   if (cached !== null && cached !== undefined) {
     applySnapshot(cached); sync.seed(cached);

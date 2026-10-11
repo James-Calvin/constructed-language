@@ -18,6 +18,11 @@
 }
 
 .flashcard-sync { justify-content: flex-end; }
+.flashcards-page .flashcard-shuffle-pending {
+  color: #ffd166;
+  background: rgba(255, 209, 102, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.45);
+}
 .flashcard-card { position: relative; }
 .flashcard-play {
   position: absolute;
