@@ -1158,8 +1158,9 @@ h2 {
 
 .dictionary-toolbar-group-right {
   margin-left: auto;
-  flex: 0 0 auto;
-  justify-content: flex-end;
+  flex: 1 1 100%;
+  justify-content: space-between;
+  flex-wrap: nowrap;
 }
 
 .dictionary-composer {
@@ -1524,6 +1525,17 @@ h2 {
   border-color: rgba(255, 79, 95, 0.45);
   background: rgba(255, 79, 95, 0.14);
   box-shadow: inset 0 0 0 1px rgba(255, 79, 95, 0.18);
+}
+
+.dictionary-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 2.5rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border-radius: 50%;
 }
 
 .dictionary-status {
@@ -2078,7 +2090,7 @@ h2 {
 
   .dictionary-toolbar-group-right {
     margin-left: 0;
-    justify-content: flex-end;
+    justify-content: space-between;
   }
 
   .dictionary-composer-grid {

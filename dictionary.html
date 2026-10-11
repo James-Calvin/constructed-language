@@ -51,6 +51,12 @@
           </button>
         </div>
         <div class="dictionary-toolbar-group dictionary-toolbar-group-right">
+          <button id="dictionaryRetry" class="dictionary-toggle-btn dictionary-refresh-btn" type="button" aria-label="Refresh dictionary" title="Refresh dictionary" aria-controls="dictionaryList">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <path d="M20 7v5h-5M4 17v-5h5" />
+              <path d="M6.1 6.1A8 8 0 0 1 19.5 10M4.5 14A8 8 0 0 0 17.9 17.9" />
+            </svg>
+          </button>
           <button
             id="dictionaryAddWordBtn"
             class="dictionary-toggle-btn"
@@ -64,7 +70,6 @@
       <section id="dictionaryComposer" class="dictionary-composer is-hidden" aria-label="Add a manual dictionary word"></section>
       <p id="dictionaryStatus" class="dictionary-status" role="status">Loading dictionary...</p>
       <p id="dictionarySyncStatus" class="dictionary-status" role="status"></p>
-      <button id="dictionaryRetry" type="button">Refresh / Retry</button>
       <ol id="dictionaryList" class="dictionary-list"></ol>
       <div id="dictionarySentinel" class="dictionary-sentinel" aria-hidden="true"></div>
     </section>
