@@ -275,7 +275,9 @@ async function run() {
   const updated = await harness(true, { saved: resume.saved, database: resume.database });
   assert.equal(updated.nodes.flashcardUpdates.textContent, 'Words or definitions have changed. Shuffle to update.');
   updated.nodes.flashcardAgain.fire('click'); updated.nodes.flashcardFace.fire('click');
-  assert.equal(updated.nodes.flashcardText.textContent, 'sun', 'Restart round does not reshuffle or adopt changed data');
+  assert.equal(updated.nodes.flashcardText.textContent, 'changed while away', 'Go again uses the latest card data just like Shuffle');
+  assert.equal(updated.nodes.flashcardProgress.textContent, 'Card 1 of 2');
+  assert.equal(updated.nodes.flashcardUpdates.textContent, '', 'Go again applies pending changes and clears the warning');
   updated.nodes.flashcardShuffle.fire('click'); updated.nodes.flashcardFace.fire('click');
   assert.equal(updated.nodes.flashcardText.textContent, 'changed while away');
   assert.equal(updated.nodes.flashcardShuffle.textContent, 'Shuffle');
@@ -295,6 +297,7 @@ async function run() {
   assert.match(html, /src="auth.js"/);
   assert.match(html, /<button id="flashcardFace" type="button"/);
   assert.match(html, /id="flashcardShuffle"/);
+  assert.match(html, /id="flashcardAgain"[^>]*>Go again<\/button>/);
   assert.match(html, /id="flashcardBack"/);
   assert.match(html, /id="flashcardWords"[^>]*checked> Defined words/);
   assert.match(html, /id="flashcardCandidates" type="checkbox"> Candidates/);

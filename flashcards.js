@@ -78,6 +78,7 @@
     const card = currentRound[position];
     el("flashcardFace").disabled = !card;
     el("flashcardShuffle").disabled = !loaded;
+    el("flashcardAgain").disabled = !loaded;
     el("flashcardBack").hidden = !currentRound.length;
     el("flashcardBack").disabled = position === 0;
     el("flashcardNext").hidden = !card;
@@ -91,7 +92,7 @@
     el("flashcardIpa").textContent = face?.pronunciation || "";
     el("flashcardIpa").hidden = !face?.pronunciation;
     el("flashcardText").textContent = face ? face.text : !loaded && !initialized ? "Loading cards…"
-      : currentRound.length ? "Round complete! Restart this round or Shuffle for a new deck."
+      : currentRound.length ? "Round complete! Go again to shuffle a fresh deck."
       : roundSelections && !Object.values(roundSelections).some(Boolean)
         ? "Select Defined words, Candidates, or Sentences, then Shuffle to start a round."
       : "No cards in this round. Change your selections or add cards, then Shuffle to update.";
@@ -226,7 +227,11 @@
     loadSnapshot(snapshot);
     renderManagement(); updateControls();
     if (!initialized) startRound();
-    else { el("flashcardShuffle").disabled = false; updateWarnings(); }
+    else {
+      el("flashcardShuffle").disabled = false;
+      el("flashcardAgain").disabled = false;
+      updateWarnings();
+    }
   }
   const sync = root.SECRET_COOPERATIVE_REFRESH.start({
     read: async () => {
@@ -282,7 +287,7 @@
     if (position >= currentRound.length) el("flashcardAgain").focus({ preventScroll: true });
   });
   el("flashcardAgain").addEventListener("click", () => {
-    motion.cancel(); position = 0; flipped = false; renderStudy();
+    startRound();
     el(currentRound.length ? "flashcardFace" : "flashcardWords").focus({ preventScroll: true });
   });
   el("flashcardShuffle").addEventListener("click", startRound);
