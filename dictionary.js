@@ -583,10 +583,11 @@ async function scanDictionaryEntries() {
           "#unheartedTimestamp": "unheartedTimestamp",
           "#morphemeData": "morphemeData",
           "#lexemeData": "lexemeData",
-          "#relationshipData": "relationshipData"
+          "#relationshipData": "relationshipData",
+          "#recipeData": "recipeData"
         },
         ProjectionExpression:
-          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #definitionReview, #noteData, #conceptData, #user, #unheartedTimestamp, meaningEditedBy, meaningEditedAt, heartUpdatedTimestamp, #morphemeData, #lexemeData, #relationshipData",
+          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #definitionReview, #noteData, #conceptData, #user, #unheartedTimestamp, meaningEditedBy, meaningEditedAt, heartUpdatedTimestamp, #morphemeData, #lexemeData, #relationshipData, #recipeData",
         ExclusiveStartKey: lastEvaluatedKey
       })
       .promise();

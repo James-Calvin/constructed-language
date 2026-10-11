@@ -28,6 +28,17 @@ This document tracks the agreed feature backlog. Mark an item `[x]` when its beh
 
 Temporary typed assembly parts are not added to the shared inventory or linked automatically. Save them as inventory entries to reuse and link them. Automatic sound changes, inflection paradigms, and family-tree visualizations remain deferred.
 
+### Compound toolbox and workbench
+
+- [x] Keep Word building authenticated but hidden from navigation and dictionary builder shortcuts; retain inventory and manual tools under collapsed Advanced controls.
+- [x] Add movable dictionary-word cards, repeatable components, sense selection, literal glosses, editable definitions, and keyboard/touch button alternatives to dragging.
+- [x] Remember each named user's toolbox and workbench locally in their browser; storage failures do not prevent building.
+- [x] Store one ordered composition per saved result, with conditional replacement, stable endpoints, snapshots and attribution; preserve existing definitions and approval when using saved words.
+- [x] Derive shared prefix/root/suffix position counts from saved component occurrences, including repetitions, without counting experiments or retries.
+- [x] Display composition relationships, follow renamed endpoints, retain historical missing-component snapshots, and preserve drafts on failed or stale saves with composition-only retries.
+
+Compounds require at least two saved components. Position counts describe compound structure, not grammatical affix categories. Existing manual relationships are preserved and do not create inferred recipes. Automated service/UI regressions pass; live AWS and desktop/mobile browser interaction checks remain manual verification tasks.
+
 ## Review words affected by rule changes
 
 - [ ] When preparing to publish language/generator settings, show all existing words that mismatch the proposed rules, including spelling-rule mismatches and changed or undeterminable IPA mappings. Explain the mismatch for each word.

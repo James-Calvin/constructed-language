@@ -4,31 +4,41 @@
   <title>Word building</title><link rel="stylesheet" href="styles.css"><script src="auth.js"></script></head>
 <body><main class="app app-dictionary word-building-page">
   <nav class="page-nav page-nav-split" aria-label="Main navigation"><a class="page-nav-link" href="index.html">Back to Generator</a><a class="page-nav-link" href="dictionary.html">Dictionary</a></nav>
-  <h1>Word building</h1><p>Assemble roots and affixes, or generate new words around a root. Connections describe your language without changing its rules.</p>
+  <h1>Word building</h1><p>Collect words, move them onto the workbench, and play with compounds.</p>
   <button id="buildingRefresh" type="button">Refresh / Retry</button><p id="buildingStatus" role="status">Loading…</p>
-  <section class="building-section"><h2>Assemble a word</h2>
-    <label>Search parts <input id="partSearch" type="search" placeholder="Spelling, meaning, or type"></label>
-    <label>Saved word or inventory entry <select id="partChoice"></select></label><button id="addSavedPart" type="button">Add part</button>
-    <details><summary>Type a temporary part</summary><label>Spelling <input id="temporaryPart" type="text"></label>
-      <label>Role <select id="temporaryKind"><option value="root">Root / word</option><option value="prefix">Prefix</option><option value="suffix">Suffix</option></select></label>
-      <button id="addTemporaryPart" type="button">Add temporary part</button></details>
-    <ol id="buildingParts"></ol>
+  <section class="building-section"><h2>Toolbox</h2>
+    <label>Find a dictionary word <input id="partSearch" type="search" placeholder="Search spelling or definition"></label>
+    <label>Choose a word to add <select id="partChoice"></select></label><button id="addSavedPart" type="button">Add selected word</button>
+    <p>Drag cards to move them, or use their buttons. Add a word again to use multiple copies.</p>
+    <div id="buildingToolbox" class="compound-grid" aria-label="Toolbox"></div>
+    <p><small>Counts show saved compound positions, not grammatical affix types.</small></p>
+  </section>
+  <section class="building-section"><h2>Workbench</h2>
+    <label>Saved compound <select id="savedCompound"></select></label><button id="openCompound" type="button">Open composition</button>
+    <ol id="buildingParts" class="compound-grid" aria-label="Ordered workbench"></ol>
+    <p id="literalGloss" aria-live="polite"></p>
     <form id="buildingForm">
       <label>Result spelling <input id="builtSpelling" type="text" required spellcheck="false" autocomplete="off"></label>
       <label>IPA <input id="builtIpa" type="text" required spellcheck="false" autocomplete="off"></label>
       <label>Definition (optional) <textarea id="builtMeaning" maxlength="2000"></textarea></label>
-      <label>Or select a requested meaning <select id="builtRequest"></select></label>
+      <button id="useLiteral" type="button">Use literal translation</button>
       <p id="buildingWarnings" role="status"></p>
       <label id="buildingOverrideLabel" hidden><input id="buildingOverride" type="checkbox"> Save despite warnings</label>
       <p id="buildingCollision" role="status"></p>
-      <button id="saveBuiltWord" type="submit">Save word and relationships</button>
+      <label id="replaceRecipeLabel" hidden><input id="replaceRecipe" type="checkbox"> Replace this saved composition</label>
+      <button id="saveBuiltWord" type="submit">Save compound</button>
       <button id="useExistingWord" type="button" hidden>Use existing word (keep its definition)</button>
-      <button id="retryBuiltLinks" type="button" hidden>Retry missing relationships</button>
+      <button id="retryBuiltLinks" type="button" hidden>Retry composition save</button>
       <button id="resetBuilder" type="button">New word / Clear builder</button>
       <p id="buildingSaveStatus" role="status"></p>
     </form>
   </section>
-  <section class="building-section"><h2>Roots and affix inventory</h2>
+  <details id="buildingAdvanced" class="building-section"><summary>Advanced</summary>
+    <label>Or select a requested meaning <select id="builtRequest" form="buildingForm"></select></label>
+    <details><summary>Type a temporary part</summary><label>Spelling <input id="temporaryPart" type="text"></label>
+      <label>Role <select id="temporaryKind"><option value="root">Root / word</option><option value="prefix">Prefix</option><option value="suffix">Suffix</option></select></label>
+      <button id="addTemporaryPart" type="button">Add temporary part</button><p>Save temporary parts in the inventory before saving a tracked compound.</p></details>
+    <h2>Roots and affix inventory</h2>
     <label>Search inventory <input id="inventorySearch" type="search"></label><button id="newInventory" type="button">New root or affix</button>
     <form id="inventoryForm" hidden>
       <label>Type <select id="inventoryKind"><option value="root">Root</option><option value="prefix">Prefix</option><option value="suffix">Suffix</option></select></label>
@@ -39,7 +49,7 @@
       <p>Editing an entry’s spelling or IPA disconnects its explicit dictionary counterpart; the dictionary word itself is unchanged.</p>
       <button type="submit">Save entry</button><button id="cancelInventory" type="button">Cancel</button><p id="inventoryError" role="status"></p>
     </form><ul id="inventoryList"></ul>
-  </section>
+  </details>
 </main>
 <script type="application/x-protected-script" data-protected-src="aws-config.js"></script>
 <script type="application/x-protected-script" data-protected-src="https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js"></script>

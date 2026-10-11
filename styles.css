@@ -2276,3 +2276,30 @@ fieldset.analytics-controls { border: 1px solid var(--border); border-radius: .5
   .analytics-bar-row { gap: .35rem; grid-template-columns: minmax(1.75rem, 15%) minmax(0, 1fr) 6rem; }
   .analytics-count { font-size: .75rem; }
 }
+.compound-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: .8rem;
+  min-height: 5rem;
+  margin: 1rem 0;
+  padding: .8rem;
+  border: 1px dashed #7b8797;
+  border-radius: .7rem;
+  list-style: none;
+}
+.compound-card {
+  min-width: 0;
+  padding: .9rem;
+  border: 1px solid #758397;
+  border-radius: .7rem;
+  background: var(--bg-panel);
+  overflow-wrap: anywhere;
+}
+.compound-card[draggable="true"] { cursor: grab; }
+.compound-card h3 { margin: 0 0 .5rem; }
+.compound-card small { display: block; color: #c8d2df; margin-bottom: .7rem; }
+.compound-card button { margin: .25rem .25rem .25rem 0; }
+.compound-card select { max-width: 100%; }
+.compound-card :focus-visible { outline: 2px solid #f9d66a; outline-offset: 3px; }
+#literalGloss { padding: .7rem; border-left: 3px solid #f9d66a; }
+#buildingAdvanced > summary { cursor: pointer; font-size: 1.2rem; }

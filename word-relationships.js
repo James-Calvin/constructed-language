@@ -18,6 +18,22 @@
     if (!from || !to || from === to) throw new Error("Choose two different words or inventory entries.");
   }
   function assemble(parts) { return parts.map(part => spelling(part.spelling)).join(""); }
+  function senses(meaning) { return [...new Set(String(meaning || "").split(/[,;]/).map(clean).filter(Boolean))]; }
+  function literal(parts) { return parts.length && parts.every(part => clean(part.sense)) ? parts.map(part => clean(part.sense)).join(" + ") : ""; }
+  function position(index, length) { return index === 0 ? "prefix" : index === length - 1 ? "suffix" : "root"; }
+  function usageCounts(recipes, resolve) {
+    const counts = new Map();
+    for (const recipe of recipes) {
+      const data = recipe.recipeData;
+      if (!resolve(data.result)) continue;
+      data.parts.forEach((part, index) => {
+        if (!resolve(part.id)) return;
+        if (!counts.has(part.id)) counts.set(part.id, {prefix:0, root:0, suffix:0});
+        counts.get(part.id)[position(index, data.parts.length)]++;
+      });
+    }
+    return counts;
+  }
   function preview(word, ipa, config, rules) {
     const derivation = rules.derivePronunciationFromSpelling({ spelling: word, config });
     const analysis = rules.analyzeEntryAgainstRuleConfig({ word: spelling(word), pronunciation: ipa, config });
@@ -54,12 +70,49 @@
         id: rows.find(item => item.lexemeData && resolve(item.rowId)?.spelling === word.word)?.rowId || ""
       }))).sort((a,b) => a.spelling.localeCompare(b.spelling));
     }
+    function recipes() { return rows.filter(row => row.recipeData && !row.recipeData.deleted); }
+    function recipeFor(id) { return recipes().find(row => row.recipeData.result === id) || null; }
+    function counts() { return usageCounts(recipes(), resolve); }
     function relationships(id) {
-      return rows.filter(row => row.relationshipData && (row.relationshipData.from === id || row.relationshipData.to === id))
+      const manual = rows.filter(row => row.relationshipData && (row.relationshipData.from === id || row.relationshipData.to === id))
         .map(row => { const data = row.relationshipData; const outgoing = data.from === id;
           return { row, data, label: types[data.type]?.[outgoing ? 0 : 1] || data.type,
             target: resolve(outgoing ? data.to : data.from) }; }).filter(edge => edge.target)
         .sort((a,b) => (a.data.order || 0) - (b.data.order || 0) || a.target.spelling.localeCompare(b.target.spelling));
+      const generated = [];
+      for (const row of recipes()) {
+        const recipe = row.recipeData;
+        if (!resolve(recipe.result)) continue;
+        recipe.parts.forEach((part, index) => {
+          if (recipe.result !== id && part.id !== id) return;
+          const targetId = recipe.result === id ? part.id : recipe.result;
+          if (manual.some(edge => edge.target.id === targetId && ["compound","prefix","suffix"].includes(edge.data.type))) return;
+          const target = resolve(targetId) || (recipe.result === id ? {...part, kind:"unavailable", pronunciation:part.pronunciation || "", meaning:part.meaning || ""} : null);
+          if (target) generated.push({row, recipe:true, target, label:recipe.result === id ? `Compound of (${position(index,recipe.parts.length)}${resolve(part.id)?"":", unavailable"})` : `Used as ${position(index,recipe.parts.length)} in`,
+            data:{...recipe,type:"compound",order:index,explanation:part.sense || ""}});
+        });
+      }
+      return manual.concat(generated);
+    }
+    async function saveRecipe({result, parts, base=null, operationId}) {
+      load(await read());
+      if (!user() || !resolve(result)) throw new Error("The result word is unavailable.");
+      if (parts.length < 2) throw new Error("Choose at least two components.");
+      if (parts.some(part => !resolve(part.id) || part.id === result || resolve(part.id).spelling === resolve(result).spelling)) throw new Error("Replace unavailable components; a word cannot contain itself.");
+      operationId=operationId||root.crypto.randomUUID();
+      const id = `__secret_recipe__::${encodeURIComponent(result)}`;
+      const existing = rows.find(row => row.rowId === id);
+      // A lost response can be retried without rewriting or double-counting the recipe.
+      if (existing?.recipeData.operationId === operationId && operationId) return existing;
+      const previous = base ? await fresh(base,"recipeData") : null;
+      if (existing && !base) throw new Error("A composition already exists. Reopen it and confirm replacement.");
+      if (base && (base.rowId !== id || previous.recipeData.result !== result)) throw new Error("The composition target changed. Reopen it.");
+      const snapshots = parts.map(part => {
+        const current=resolve(part.id);
+        return {instanceId:part.instanceId || root.crypto.randomUUID(),id:part.id,spelling:current.spelling,
+          pronunciation:current.pronunciation,meaning:part.meaning || "",sense:clean(part.sense)};
+      });
+      return write({rowId:id,timestamp:0,recipeData:{result,parts:snapshots,literal:literal(snapshots),operationId,...attribution(previous?.recipeData)}},"recipeData",previous);
     }
     async function read() {
       const raw = []; let cursor;
@@ -159,6 +212,10 @@
       const previous=await fresh(base,field);
       // Delete links first so a failed cleanup leaves a visible, retryable entry.
       for(const edge of rows.filter(row=>row.relationshipData && [row.relationshipData.from,row.relationshipData.to].includes(base.rowId))) await removeLink(edge);
+      for(const recipe of recipes().filter(row=>row.recipeData.result===base.rowId)) {
+        const current=await fresh(recipe,"recipeData");
+        await write({...current,recipeData:{...current.recipeData,deleted:true,...attribution(current.recipeData)}},"recipeData",current);
+      }
       const tombstone=await write({...previous,[field]:{...previous[field],deleted:true,...attribution(previous[field])}},field,previous);
       return tombstone;
     }
@@ -206,10 +263,10 @@
       try{await connect(previous,item.word);}catch(error){throw new Error(`Candidate saved; connection pending. Click Connect existing word to retry. ${error.message}`);}
       return item;
     }
-    return {load,read,remember,forgetWord,words,inventory,choices,resolve,relationships,saveInventory,ensureWord,link,removeLink,promote,
+    return {load,read,remember,forgetWord,words,inventory,choices,resolve,relationships,recipes,recipeFor,counts,saveRecipe,saveInventory,ensureWord,link,removeLink,promote,
       removeInventory:base=>removeNode(base,"morphemeData"),removeWord,renameWord,saveWord,connect,
       requests,version:()=>revision,isBusy:()=>pending>0};
   }
-  root.SECRET_RELATIONSHIPS={types,edgeId,validateLink,assemble,preview,create};
+  root.SECRET_RELATIONSHIPS={types,edgeId,validateLink,assemble,senses,literal,position,usageCounts,preview,create};
   if(typeof module!=="undefined") module.exports=root.SECRET_RELATIONSHIPS;
 })(typeof window!=="undefined"?window:globalThis);

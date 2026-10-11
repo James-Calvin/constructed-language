@@ -13,12 +13,12 @@
       const self=identity?service.resolve(identity):service.choices().find(item=>item.kind==="word"&&item.spelling===word);
       const list=node("ul");
       for(const edge of self?.id?service.relationships(self.id):[]){
-        const li=node("li"),link=node("a",`${edge.target.spelling} /${edge.target.pronunciation}/ — ${edge.target.meaning || "No definition"}`);
-        link.href=edge.target.kind==="word"?`dictionary.html?word=${encodeURIComponent(edge.target.spelling)}`:`word-building.html?entry=${encodeURIComponent(edge.target.id)}`;
+        const li=node("li"),link=node(edge.target.kind==="word"?"a":"span",`${edge.target.spelling} /${edge.target.pronunciation}/ — ${edge.target.meaning || "No definition"}`);
+        if(edge.target.kind==="word")link.href=`dictionary.html?word=${encodeURIComponent(edge.target.spelling)}`;
         li.append(node("span",`${edge.label}: `),link);
         if(edge.data.explanation)li.append(node("p",edge.data.explanation));
         li.append(node("small",`Edited by ${edge.data.editedBy || edge.data.author} · ${new Date(edge.data.editedAt || edge.data.createdAt).toLocaleDateString()}`));
-        li.append(button("Edit relationship",()=>{local.editing=true;local.edge=edge.row;local.type=edge.data.type;local.explanation=edge.data.explanation;onChange();}),
+        if(!edge.recipe)li.append(button("Edit relationship",()=>{local.editing=true;local.edge=edge.row;local.type=edge.data.type;local.explanation=edge.data.explanation;onChange();}),
           button("Remove link",()=>{local.deleting=edge.row;onChange();}));
         list.append(li);
       }
@@ -26,8 +26,7 @@
       details.append(list);
       const shortcuts=node("div");shortcuts.className="relationship-actions";
       const query=identity?`rootId=${encodeURIComponent(identity)}`:`rootWord=${encodeURIComponent(word)}`;
-      for(const [label,url]of [["Build with this word",identity?`word-building.html?entry=${encodeURIComponent(identity)}`:`word-building.html?word=${encodeURIComponent(word)}`],
-        ["Generate starting with this root",`index.html?${query}&rootPosition=start`],
+      for(const [label,url]of [["Generate starting with this root",`index.html?${query}&rootPosition=start`],
         ["Generate ending with this root",`index.html?${query}&rootPosition=end`]]){
         const link=node("a",label);link.className="page-nav-link";link.href=url;shortcuts.append(link);
       }
