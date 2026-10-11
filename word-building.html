@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Word building</title><link rel="stylesheet" href="styles.css"><script src="auth.js"></script></head>
+<body><main class="app app-dictionary word-building-page">
+  <nav class="page-nav page-nav-split" aria-label="Main navigation"><a class="page-nav-link" href="index.html">Back to Generator</a><a class="page-nav-link" href="dictionary.html">Dictionary</a></nav>
+  <h1>Word building</h1><p>Assemble roots and affixes, or generate new words around a root. Connections describe your language without changing its rules.</p>
+  <button id="buildingRefresh" type="button">Refresh / Retry</button><p id="buildingStatus" role="status">Loading…</p>
+  <section class="building-section"><h2>Assemble a word</h2>
+    <label>Search parts <input id="partSearch" type="search" placeholder="Spelling, meaning, or type"></label>
+    <label>Saved word or inventory entry <select id="partChoice"></select></label><button id="addSavedPart" type="button">Add part</button>
+    <details><summary>Type a temporary part</summary><label>Spelling <input id="temporaryPart" type="text"></label>
+      <label>Role <select id="temporaryKind"><option value="root">Root / word</option><option value="prefix">Prefix</option><option value="suffix">Suffix</option></select></label>
+      <button id="addTemporaryPart" type="button">Add temporary part</button></details>
+    <ol id="buildingParts"></ol>
+    <form id="buildingForm">
+      <label>Result spelling <input id="builtSpelling" type="text" required spellcheck="false" autocomplete="off"></label>
+      <label>IPA <input id="builtIpa" type="text" required spellcheck="false" autocomplete="off"></label>
+      <label>Definition (optional) <textarea id="builtMeaning" maxlength="2000"></textarea></label>
+      <label>Or select a requested meaning <select id="builtRequest"></select></label>
+      <p id="buildingWarnings" role="status"></p>
+      <label id="buildingOverrideLabel" hidden><input id="buildingOverride" type="checkbox"> Save despite warnings</label>
+      <p id="buildingCollision" role="status"></p>
+      <button id="saveBuiltWord" type="submit">Save word and relationships</button>
+      <button id="useExistingWord" type="button" hidden>Use existing word (keep its definition)</button>
+      <button id="retryBuiltLinks" type="button" hidden>Retry missing relationships</button>
+      <button id="resetBuilder" type="button">New word / Clear builder</button>
+      <p id="buildingSaveStatus" role="status"></p>
+    </form>
+  </section>
+  <section class="building-section"><h2>Roots and affix inventory</h2>
+    <label>Search inventory <input id="inventorySearch" type="search"></label><button id="newInventory" type="button">New root or affix</button>
+    <form id="inventoryForm" hidden>
+      <label>Type <select id="inventoryKind"><option value="root">Root</option><option value="prefix">Prefix</option><option value="suffix">Suffix</option></select></label>
+      <label>Spelling <input id="inventorySpelling" type="text" required></label>
+      <label>IPA <input id="inventoryIpa" type="text" required></label>
+      <label>Meaning (optional) <textarea id="inventoryMeaning" maxlength="2000"></textarea></label>
+      <label>Notes (optional) <textarea id="inventoryNotes" maxlength="4000"></textarea></label>
+      <p>Editing an entry’s spelling or IPA disconnects its explicit dictionary counterpart; the dictionary word itself is unchanged.</p>
+      <button type="submit">Save entry</button><button id="cancelInventory" type="button">Cancel</button><p id="inventoryError" role="status"></p>
+    </form><ul id="inventoryList"></ul>
+  </section>
+</main>
+<script type="application/x-protected-script" data-protected-src="aws-config.js"></script>
+<script type="application/x-protected-script" data-protected-src="https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js"></script>
+<script type="application/x-protected-script" data-protected-src="shared.js"></script>
+<script type="application/x-protected-script" data-protected-src="rules-config.js"></script>
+<script type="application/x-protected-script" data-protected-src="database-settings.js" data-protected-ready="SECRET_RULES_READY"></script>
+<script type="application/x-protected-script" data-protected-src="definition-workflow.js"></script>
+<script type="application/x-protected-script" data-protected-src="meaning-requests.js"></script>
+<script type="application/x-protected-script" data-protected-src="cooperative-refresh.js"></script>
+<script type="application/x-protected-script" data-protected-src="word-relationships.js"></script>
+<script type="application/x-protected-script" data-protected-src="relationship-panel.js"></script>
+<script type="application/x-protected-script" data-protected-src="word-building.js"></script>
+</body></html>

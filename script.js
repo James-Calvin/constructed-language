@@ -434,6 +434,9 @@ function syncGenerationAvailability(min, max) {
   if (ruleConfigCompatibility.isReady && !generatorConstraints.ready()) {
     ruleConfigCompatibility = { isReady: false, message: "Dictionary counts are required for normalization. See Constraints for load status and Retry." };
   }
+  if (ruleConfigCompatibility.isReady && window.SECRET_ROOT_CONTEXT && !window.SECRET_ROOT_CONTEXT.ready()) {
+    ruleConfigCompatibility = {isReady:false,message:"Load the selected root, or clear root context, before generating."};
+  }
 
   if (generateBtn) {
     generateBtn.disabled = !ruleConfigCompatibility.isReady;
@@ -747,6 +750,7 @@ async function putCurrentUserRecord(state, overrides = {}, options = { heartActi
   generatorRevision++;
   generatorConstraints.remember(item);
   rememberGeneratorRecord(item);
+  await window.SECRET_ROOT_CONTEXT?.saved(state,item);
 }
 
 async function persistHeartedState(state, hearted) {
@@ -1411,6 +1415,7 @@ function getGeneratorDefinitionPicker() {
       }
       rememberGeneratorRecord(item);
       generatorConstraints.remember(item);
+      if (state) void window.SECRET_ROOT_CONTEXT?.saved(state,item);
       flushPersistedRowsSave();
       if (generatorSync) void generatorSync.request();
     }
@@ -1613,6 +1618,7 @@ function renderRow(rowId) {
 
   const savedEditor = sharedUi.captureEditor(row);
   renderMeaning(row, state);
+  window.SECRET_ROOT_CONTEXT?.render(row,state,selectedRowId===rowId);
   sharedUi.restoreEditor(row, savedEditor);
 }
 
@@ -1862,6 +1868,7 @@ async function handleSaveMeaning(rowId) {
       if (item.user !== getCurrentUserId()) state.ownMeaning = previousOwnMeaning;
       else state.meaningUpdatedTimestamp = item.meaningUpdatedTimestamp;
       generatorRevision++; generatorConstraints.remember(item); rememberGeneratorRecord(item);
+      await window.SECRET_ROOT_CONTEXT?.saved(state,item);
     } else {
       await persistOwnMeaning(state, trimmedMeaning);
     }
@@ -2219,13 +2226,17 @@ if (clearAllBtn) {
   clearAllBtn.addEventListener("click", handleClearAllClick);
 }
 
+window.SECRET_ROOT_CONTEXT = window.SECRET_ROOT_GENERATION?.create({client:getHeartsTableClient,table:awsConfig.heartsTableName,
+  user:getCurrentUserId,inputs:{start:wordPrefixInput,end:wordSuffixInput},revalidate:()=>clampSyllables(false),
+  rerender:()=>{for(const state of rowStateById.values())renderRow(state.rowId);},refresh:()=>{if(generatorSync)void generatorSync.request();}});
+
 generatorSync = SECRET_COOPERATIVE_REFRESH.start({
-  isBusy: () => Boolean(generatorDefinitionPicker?.isOpen()) || [...rowStateById.values()].some(state => state.isEditing || state.saveStatus !== "idle") ||
+  isBusy: () => Boolean(window.SECRET_ROOT_CONTEXT?.isBusy()) || Boolean(generatorDefinitionPicker?.isOpen()) || [...rowStateById.values()].some(state => state.isEditing || state.saveStatus !== "idle") ||
     Boolean(document.activeElement && resultsList.contains(document.activeElement) &&
       document.activeElement.matches("input, textarea, select")),
   version: () => `${generatorRevision}:${generatorConstraints.enabled()}:${rowStateById.size > 0}`,
   read: async () => {
-    if (rowStateById.size === 0 && !generatorConstraints.enabled()) return [];
+    if (rowStateById.size === 0 && !generatorConstraints.enabled() && !window.SECRET_ROOT_CONTEXT?.isActive()) return [];
     if (!isHeartsConfigured || !await ensureAwsCredentials()) throw new Error("Database access is unavailable.");
     const items = [];
     let lastKey;
@@ -2241,6 +2252,7 @@ generatorSync = SECRET_COOPERATIVE_REFRESH.start({
     // A skipped read with no rows and normalization off is not a dictionary snapshot.
     if (rowStateById.size || generatorConstraints.enabled()) generatorConstraints.accept(items);
     if (generatorDefinitionPicker) generatorDefinitionPicker.load(items);
+    window.SECRET_ROOT_CONTEXT?.accept(items);
     for (const state of rowStateById.values()) {
       const matches = items.filter(item => item.word === state.word && item.pronunciation);
       const own = findNewestCurrentUserMatch(matches, getCurrentUserId());
@@ -2266,7 +2278,9 @@ generatorSync = SECRET_COOPERATIVE_REFRESH.start({
   onSuccess: () => generatorConstraints.success(),
   onError: error => {
     generatorConstraints.error();
+    window.SECRET_ROOT_CONTEXT?.error();
     console.warn("Shared refresh failed; keeping current words and normalization counts.", error);
   }
 });
 window.addEventListener("beforeunload", () => generatorSync.stop());
+if (window.SECRET_ROOT_CONTEXT) { clampSyllables(false); void generatorSync.request(); }

@@ -18,12 +18,15 @@ This document tracks the agreed feature backlog. Mark an item `[x]` when its beh
 - [x] Add optional per-word notes with author and date, hidden in a collapsed area by default.
 - [x] Show a small filled red heart as the unread-notes notification on a word. Track which notes each user has read, and clear the notification when they view those notes.
 
-## Roots and related words (deferred)
+## Roots, related words, and word building
 
-Deferred at the user's request; not part of the current implementation pass.
+- [x] Add collapsed dictionary relationship panels with labeled, reciprocal links, multiple roots, ordered compound parts, explanations, shared editing, and confirmed removal.
+- [x] Add a shared root/prefix/suffix inventory, including root-only entries, dictionary counterpart warnings, and candidate-root creation or connection to existing words.
+- [x] Add an authenticated Word building page with searchable parts, editable assembly and IPA, rule warnings with explicit overrides, and optional written/requested meanings.
+- [x] Generate related words using a chosen root at the start or end, with optional relationship saving only after the word is saved.
+- [x] Preserve stable identities through renames and relationships through undefine; delete incident links without deleting connected words. Support conditional writes, partial-save retries, and cooperative refresh.
 
-- [ ] Add a simple, optional way to link a word to a root or related word and label the relationship, such as derived form, compound, or variant. Keep this out of the main editing flow unless opened.
-- [ ] Make it easy to generate related candidates from a selected root using the existing Starts with feature.
+Temporary typed assembly parts are not added to the shared inventory or linked automatically. Save them as inventory entries to reuse and link them. Automatic sound changes, inflection paradigms, and family-tree visualizations remain deferred.
 
 ## Review words affected by rule changes
 

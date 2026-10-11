@@ -46,6 +46,18 @@ let wordNotes;
 let dictionaryRevision = 0;
 let dictionaryLoaded = false;
 let definitionPicker;
+let wordRelationships;
+let relationshipPanel;
+function getWordRelationships() {
+  if (!wordRelationships) wordRelationships = SECRET_RELATIONSHIPS.create({client:getHeartsTableClient,
+    table:awsConfig.heartsTableName,user:()=>currentUserId});
+  return wordRelationships;
+}
+function getRelationshipPanel() {
+  if (!relationshipPanel) relationshipPanel = SECRET_RELATIONSHIP_PANEL.create({service:getWordRelationships(),
+    ready:ensureAwsCredentials,onChange:()=>{dictionaryRevision++;refreshDictionaryView({preserveCount:renderedGroupCount,preferredWord:selectedWord});}});
+  return relationshipPanel;
+}
 
 function getDefinitionPicker() {
   if (!definitionPicker) definitionPicker = SECRET_DEFINITION_PICKER.create({
@@ -59,6 +71,7 @@ function getDefinitionPicker() {
     onAssigned: item => {
       const record = normalizeDictionaryEntry(item);
       recordsById.set(record.id, record);
+      getWordRelationships().remember(item);
       activeFilter = FILTERS.CANDIDATE;
       selectedWord = item.word;
       rebuildGroupsFromEntries();
@@ -567,10 +580,13 @@ async function scanDictionaryEntries() {
           "#noteData": "noteData",
           "#conceptData": "conceptData",
           "#user": "user",
-          "#unheartedTimestamp": "unheartedTimestamp"
+          "#unheartedTimestamp": "unheartedTimestamp",
+          "#morphemeData": "morphemeData",
+          "#lexemeData": "lexemeData",
+          "#relationshipData": "relationshipData"
         },
         ProjectionExpression:
-          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #definitionReview, #noteData, #conceptData, #user, #unheartedTimestamp, meaningEditedBy, meaningEditedAt, heartUpdatedTimestamp",
+          "#rowId, #word, #pronunciation, #meaning, #hearted, #timestamp, #updatedTimestamp, #meaningUpdatedTimestamp, #definitionReview, #noteData, #conceptData, #user, #unheartedTimestamp, meaningEditedBy, meaningEditedAt, heartUpdatedTimestamp, #morphemeData, #lexemeData, #relationshipData",
         ExclusiveStartKey: lastEvaluatedKey
       })
       .promise();
@@ -1422,6 +1438,7 @@ function createGroupCard(group) {
   const definitionSelection = getDefinitionPicker().render(group.word);
   if (definitionSelection) card.appendChild(definitionSelection);
   card.appendChild(getWordNotes().render(group.word));
+  card.appendChild(getRelationshipPanel().render(group.word));
 
   if (historyEntries.length > 0) {
     const history = document.createElement("div");
@@ -1898,6 +1915,7 @@ async function putDictionaryRecord(record, options = {}) {
   const item = buildDictionaryTableItem(record);
   await SECRET_DEFINITIONS.save(currentHeartsClient, awsConfig.heartsTableName, item, options);
   Object.assign(record, item);
+  if (typeof SECRET_RELATIONSHIPS !== "undefined") getWordRelationships().remember(item);
 }
 
 async function deleteDictionaryRecord(record) {
@@ -1985,6 +2003,7 @@ async function handleSaveWordEdit(word) {
     }
     await Promise.all(snapshots.map(({ record }) => putDictionaryRecord(record)));
     await getWordNotes().rename(word, nextWord);
+    await getWordRelationships().renameWord(word, nextWord);
 
     resetWordEditor();
     wordEditorState.deleteConfirmationWord = "";
@@ -2086,8 +2105,10 @@ async function handleDeleteWord(word) {
 
   try {
     await ensureAwsCredentials();
+    await getWordRelationships().removeWord(word);
     await Promise.all(recordsToDelete.map((record) => deleteDictionaryRecord(record)));
     await getWordNotes().remove(word);
+    getWordRelationships().forgetWord(word);
     for (const record of recordsToDelete) {
       clearCopyFeedback(record.id);
       recordsById.delete(record.id);
@@ -2739,7 +2760,7 @@ function dictionaryRefreshBusy() {
   const field = document.activeElement;
   return !dictionaryLoaded || getDefinitionPicker().isOpen() || manualComposerState.isOpen || Boolean(wordEditorState.word) ||
     Boolean(wordEditorState.deleteConfirmationWord) || groups.some(group => group.isEditing || group.saveStatus !== "idle") ||
-    getWordNotes().isBusy() || Boolean(field && dictionaryList.contains(field) && field.matches("input, textarea, select"));
+    getWordNotes().isBusy() || getRelationshipPanel().isBusy() || getWordRelationships().isBusy() || Boolean(field && dictionaryList.contains(field) && field.matches("input, textarea, select"));
 }
 
 function applyDictionarySnapshot(rawItems, background = true) {
@@ -2750,6 +2771,7 @@ function applyDictionarySnapshot(rawItems, background = true) {
   const anchorTop = anchor && anchor.getBoundingClientRect().top;
   getWordNotes().load(rawItems);
   getDefinitionPicker().load(rawItems);
+  getWordRelationships().load(rawItems);
   const previousRecords = new Map(recordsById);
   recordsById.clear();
   for (const rawItem of rawItems) {

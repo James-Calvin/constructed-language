@@ -573,6 +573,44 @@ h2 {
   color: var(--text-muted);
 }
 
+.building-section, .word-relationships, .root-context-banner {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--text-muted);
+  border-radius: 10px;
+  text-align: left;
+}
+.building-section label, .building-section form, .word-relationships form {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.6rem 0;
+}
+.building-section input:not([type="checkbox"]), .building-section textarea,
+.building-section select, .word-relationships input, .word-relationships textarea, .word-relationships select {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0.5rem;
+  background: var(--bg-input);
+  color: var(--text-main);
+  border: 1px solid var(--text-muted);
+  border-radius: 6px;
+  font: inherit;
+}
+.building-section button, .root-context-banner button { margin: 0.25rem; }
+.relationship-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
+.word-relationships li, #buildingParts li { margin: 0.6rem 0; overflow-wrap: anywhere; }
+.inventory-card { list-style: none; border-bottom: 1px solid var(--text-muted); padding: 1rem 0; }
+.inventory-card h3 { margin: 0.5rem 0; }
+#inventoryList { padding: 0; }
+.root-link-choice { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.4rem; }
+.word-relationships summary, .building-section summary { cursor: pointer; }
+.word-building-page [hidden], .word-relationships [hidden],
+.root-context-banner[hidden], .root-context-banner [hidden] { display: none !important; }
+.word-relationships a, .inventory-card a { overflow-wrap: anywhere; }
+.building-section button:focus-visible, .root-context-banner button:focus-visible,
+.word-relationships button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 .meaning-action:hover,
 .meaning-action:focus-visible {
   color: var(--text-main);
