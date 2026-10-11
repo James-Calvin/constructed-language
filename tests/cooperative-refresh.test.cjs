@@ -101,6 +101,15 @@ async function run() {
   const stoppedReads = reads;
   scope.fire('focus'); doc.fire('visibilitychange'); await settle();
   assert.equal(reads, stoppedReads);
+  const alignedTimers=new Map();let alignedId=0,delay=19000,alignedReads=0;
+  const alignedScope=events({document:doc,setTimeout(callback,ms){const id=++alignedId;alignedTimers.set(id,{callback,ms});return id;},clearTimeout:id=>alignedTimers.delete(id),
+    setInterval(){throw new Error('Cache-aligned scheduling must not start another interval');},clearInterval(){}});
+  const aligned=start({scope:alignedScope,nextDelay:()=>delay,read:async()=>{alignedReads++;delay=30000;return[];},apply(){}});
+  assert.equal([...alignedTimers.values()][0].ms,19000,'Navigation retains remaining snapshot lifetime');
+  await aligned.request();assert.equal([...alignedTimers.values()][0].ms,30000,'Successful reads realign the next check');
+  focused=false;const callback=[...alignedTimers.values()][0].callback;alignedTimers.clear();callback();await settle();assert.equal(alignedReads,1,'Unfocused pages never refresh');
+  focused=true;alignedScope.fire('focus');await settle();assert.equal(alignedReads,2);assert.equal(alignedTimers.size,1,'Returning focus resumes scheduling');
+  aligned.stop();assert.equal(alignedTimers.size,0);
   console.log('Cooperative refresh tests passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

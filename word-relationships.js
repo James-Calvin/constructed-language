@@ -42,45 +42,62 @@
         ...(!analysis.available ? ["The active rules cannot verify this word."] : [])])] };
   }
   function create({ client, table, user }) {
-    let rows = [], revision = 0, pending = 0;
+    let rows = [], revision = 0, pending = 0, cached={};
     const requests = root.SECRET_MEANING_REQUESTS.create({ client, table, user });
-    function load(raw) { rows = raw; requests.load(raw); }
-    const words = () => root.SECRET_MEANING_REQUESTS.groupWords(rows);
-    const inventory = () => rows.filter(row => row.morphemeData && !row.morphemeData.deleted).sort((a,b) => a.morphemeData.spelling.localeCompare(b.morphemeData.spelling));
-    function resolve(id) {
-      const row = rows.find(item => item.rowId === id);
+    function load(raw) { rows = raw; cached={};requests.load(raw); }
+    function indexes(){
+      if(!cached.indexes){
+        const start=root.performance?.now?.()??Date.now(),grouped=root.SECRET_MEANING_REQUESTS.groupWords(rows);
+        cached.indexes={words:grouped,byWord:new Map(grouped.map(word=>[word.word,word])),byId:new Map(rows.map(row=>[row.rowId,row])),byKey:new Map(rows.map(row=>[key(row),row])),resolved:new Map()};
+        root.SECRET_DICTIONARY_CACHE?.measure("relationshipIndexMilliseconds",(root.performance?.now?.()??Date.now())-start);
+      }
+      return cached.indexes;
+    }
+    const words = () => indexes().words;
+    const inventory = () => cached.inventory||(cached.inventory=rows.filter(row => row.morphemeData && !row.morphemeData.deleted).sort((a,b) => a.morphemeData.spelling.localeCompare(b.morphemeData.spelling)));
+    function resolve(id,visiting=new Set()) {
+      const index=indexes();if(index.resolved.has(id))return index.resolved.get(id);if(visiting.has(id))return null;visiting.add(id);
+      const value=resolveUncached(id,visiting);index.resolved.set(id,value);return value;
+    }
+    function resolveUncached(id,visiting) {
+      const index=indexes(),row = index.byId.get(id);
       if (row?.morphemeData && !row.morphemeData.deleted) {
         const data = row.morphemeData;
-        const counterpart = data.counterpartId ? resolve(data.counterpartId) : words().find(word => word.word === data.spelling);
+        const counterpart = data.counterpartId ? resolve(data.counterpartId,visiting) : index.byWord.get(data.spelling);
         return { id, kind: data.kind, spelling: counterpart?.spelling || counterpart?.word || data.spelling,
           pronunciation: counterpart?.pronunciation || data.pronunciation, meaning: counterpart?.meaning || data.meaning,
           category: counterpart?.category || (counterpart ? root.SECRET_DEFINITIONS.classification(counterpart) : "root-only"), row, counterpart };
       }
       if (!row?.lexemeData || row.lexemeData.deleted) return null;
       const data = row.lexemeData;
-      const source = rows.find(item => item.rowId === data.source.rowId && item.timestamp === data.source.timestamp && item.word);
-      const word = words().find(item => item.word === (source?.word || data.spelling));
+      const source = index.byKey.get(key(data.source));
+      const word = index.byWord.get(source?.word || data.spelling);
       return word ? { id, kind: "word", spelling: word.word, pronunciation: word.pronunciation,
         meaning: word.meaning || "", category: root.SECRET_DEFINITIONS.classification(word), row, word } : null;
     }
     function choices() {
-      return inventory().map(item => resolve(item.rowId)).concat(words().map(word => ({
+      if(cached.choices)return cached.choices;
+      const nodes=new Map();for(const row of rows){if(row.lexemeData){const endpoint=resolve(row.rowId);if(endpoint&&!nodes.has(endpoint.spelling))nodes.set(endpoint.spelling,row.rowId);}}
+      return cached.choices=inventory().map(item => resolve(item.rowId)).filter(Boolean).concat(words().map(word => ({
         kind: "word", spelling: word.word, pronunciation: word.pronunciation, meaning: word.meaning || "",
         category: root.SECRET_DEFINITIONS.classification(word), word,
-        id: rows.find(item => item.lexemeData && resolve(item.rowId)?.spelling === word.word)?.rowId || ""
+        id: nodes.get(word.word) || ""
       }))).sort((a,b) => a.spelling.localeCompare(b.spelling));
     }
-    function recipes() { return rows.filter(row => row.recipeData && !row.recipeData.deleted); }
-    function recipeFor(id) { return recipes().find(row => row.recipeData.result === id) || null; }
-    function counts() { return usageCounts(recipes(), resolve); }
+    function recipes() { return cached.recipes||(cached.recipes=rows.filter(row => row.recipeData && !row.recipeData.deleted)); }
+    function recipeFor(id) { if(!cached.recipeByResult)cached.recipeByResult=new Map(recipes().map(row=>[row.recipeData.result,row]));return cached.recipeByResult.get(id)||null; }
+    function counts() { return cached.counts||(cached.counts=usageCounts(recipes(), resolve)); }
     function relationships(id) {
-      const manual = rows.filter(row => row.relationshipData && (row.relationshipData.from === id || row.relationshipData.to === id))
+      if(!cached.relationships)cached.relationships=new Map();if(cached.relationships.has(id))return cached.relationships.get(id);
+      if(!cached.edges){cached.edges=new Map();for(const row of rows){if(!row.relationshipData)continue;for(const endpoint of new Set([row.relationshipData.from,row.relationshipData.to])){if(!cached.edges.has(endpoint))cached.edges.set(endpoint,[]);cached.edges.get(endpoint).push(row);}}}
+      const manual = (cached.edges.get(id)||[])
         .map(row => { const data = row.relationshipData; const outgoing = data.from === id;
           return { row, data, label: types[data.type]?.[outgoing ? 0 : 1] || data.type,
             target: resolve(outgoing ? data.to : data.from) }; }).filter(edge => edge.target)
         .sort((a,b) => (a.data.order || 0) - (b.data.order || 0) || a.target.spelling.localeCompare(b.target.spelling));
       const generated = [];
-      for (const row of recipes()) {
+      if(!cached.incidentRecipes){cached.incidentRecipes=new Map();for(const row of recipes()){for(const endpoint of new Set([row.recipeData.result,...row.recipeData.parts.map(part=>part.id)])){if(!cached.incidentRecipes.has(endpoint))cached.incidentRecipes.set(endpoint,[]);cached.incidentRecipes.get(endpoint).push(row);}}}
+      for (const row of cached.incidentRecipes.get(id)||[]) {
         const recipe = row.recipeData;
         if (!resolve(recipe.result)) continue;
         recipe.parts.forEach((part, index) => {
@@ -92,7 +109,7 @@
             data:{...recipe,type:"compound",order:index,explanation:part.sense || ""}});
         });
       }
-      return manual.concat(generated);
+      const result=manual.concat(generated);cached.relationships.set(id,result);return result;
     }
     async function saveRecipe({result, parts, base=null, operationId}) {
       load(await read());
@@ -121,10 +138,9 @@
       } while (cursor);
       return raw;
     }
-    function remember(item) { rows = rows.filter(row => key(row) !== key(item)).concat(item); requests.load(rows); }
+    function remember(item) { load(rows.filter(row => key(row) !== key(item)).concat(item)); }
     function forgetWord(word) {
-      rows=rows.flatMap(row=>row.word!==word?[row]:row.conceptData?[{rowId:row.rowId,timestamp:row.timestamp,conceptData:row.conceptData}]:[]);
-      requests.load(rows);
+      load(rows.flatMap(row=>row.word!==word?[row]:row.conceptData?[{rowId:row.rowId,timestamp:row.timestamp,conceptData:row.conceptData}]:[]));
     }
     async function fresh(item, field) {
       const result = await client().get({ TableName: table, Key: {rowId:item.rowId,timestamp:item.timestamp}, ConsistentRead:true }).promise();
@@ -205,7 +221,7 @@
       const previous=await fresh(base,"relationshipData"); pending++;revision++;
       try {await client().delete({TableName:table,Key:{rowId:base.rowId,timestamp:0},ConditionExpression:"#data = :data",
         ExpressionAttributeNames:{"#data":"relationshipData"},ExpressionAttributeValues:{":data":previous.relationshipData}}).promise();
-        rows=rows.filter(row=>row.rowId!==base.rowId);
+        load(rows.filter(row=>row.rowId!==base.rowId));
       } finally {pending--;revision++;}
     }
     async function removeNode(base, field) {

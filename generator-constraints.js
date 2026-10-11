@@ -1,6 +1,6 @@
 (function (root) {
   "use strict";
-  function create({ document, config, onChange, requestRefresh }) {
+  function create({ document, config, onChange, requestRefresh,group=null }) {
     const rows = document.getElementById("normalizationRows");
     const status = document.getElementById("normalizationStatus");
     const retry = document.getElementById("normalizationRetry");
@@ -8,6 +8,7 @@
     let data = [];
     let loaded = false;
     let failed = false;
+    let dataRevision=0,weightKey="",weightCache={},groupedData=null;
     function checkbox(labelText, checked, parent) {
       const label = document.createElement("label");
       const input = document.createElement("input");
@@ -51,20 +52,23 @@
           : "Loading dictionary counts before normalized generation…") +
         (empty ? " An enabled setting has no populations selected and uses uniform weights." : "");
     }
-    retry.addEventListener("click", () => { requestRefresh(); });
+    retry.addEventListener("click", () => { requestRefresh({force:true}); });
     updateStatus();
     return {
       enabled,
       ready: () => !enabled() || loaded,
-      options: () => ({ suffix: document.getElementById("wordSuffix").value,
-        weights: enabled() && loaded ? root.SECRET_GENERATOR_NORMALIZATION.calculate(data, config(), settings()).weights : {} }),
-      accept(items) { data = items; loaded = true; failed = false; updateStatus(); onChange(); },
+      options: () => {
+        if(enabled()&&loaded){const active=config(),selected=settings(),key=JSON.stringify([dataRevision,active,selected]);
+          if(key!==weightKey){if(!groupedData&&group)groupedData=group(data);weightCache=root.SECRET_GENERATOR_NORMALIZATION.calculate(data,active,selected,groupedData).weights;weightKey=key;}}
+        return {suffix:document.getElementById("wordSuffix").value,weights:enabled()&&loaded?weightCache:{}};
+      },
+      accept(items) { data = items; dataRevision++;groupedData=null;loaded = true; failed = false; updateStatus(); onChange(); },
       success() { failed = false; updateStatus(); },
       error() { failed = true; updateStatus(); onChange(); },
       remember(item) {
         if (!loaded) return;
         data = data.filter(existing => existing.rowId !== item.rowId || existing.timestamp !== item.timestamp);
-        data.push(item); updateStatus(); onChange();
+        data.push(item); dataRevision++;groupedData=null;updateStatus(); onChange();
       }
     };
   }

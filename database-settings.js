@@ -261,7 +261,7 @@
     }
 
     const refreshWithoutInterrupting = () => {
-      if (document.visibilityState === "hidden") {
+      if (document.visibilityState === "hidden" || (document.hasFocus && !document.hasFocus())) {
         return;
       }
       void refreshRulesFromDatabase().catch((error) => {
@@ -291,11 +291,17 @@
   };
 
   globalScope.SECRET_DATABASE_SETTINGS = api;
-  globalScope.SECRET_RULES_READY = synchronizeRulesFromDatabase({ force: false, announce: false })
+  let usableLocalRules=false;
+  try{const stored=JSON.parse(getStorage()?.getItem(rulesApi.storageKeys?.active)||"null");
+    usableLocalRules=Boolean(stored&&rulesApi.validateRuleConfig?.(stored).isValid);
+  }catch{}
+  const initialRefresh = synchronizeRulesFromDatabase({ force: !usableLocalRules, announce: usableLocalRules })
     .then((result) => ({ ok: true, ...result }))
     .catch((error) => {
       console.warn("Could not refresh language settings from DynamoDB; using the local cache.", error);
       return { ok: false, found: false, error };
     });
-  globalScope.SECRET_RULES_READY.then(startAutomaticSync);
+  // Warm navigation must not wait on credentials or a settings GetItem.
+  globalScope.SECRET_RULES_READY=usableLocalRules?Promise.resolve({ok:true,cached:true}):initialRefresh;
+  initialRefresh.then(startAutomaticSync);
 })(window);

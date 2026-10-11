@@ -67,6 +67,18 @@ Compounds require at least two saved components. Position counts describe compou
 
 Refresh runs every 30 seconds while visible and focused, and on return. Dictionary and generator refresh defer during editing/saving and catch up afterward. The meanings-needed list refreshes too. Sunrise yellow applies to heart icons (not word text) when two or more named users have hearted a word; legacy identities do not count.
 
+### Navigation and snapshot performance
+
+- [x] Remove dictionary relationship panels and their UI import; preserve saved relationships and lazy rename/delete maintenance.
+- [x] Index and memoize relationship grouping, endpoint resolution, choices, recipes, adjacency and position counts per snapshot.
+- [x] Share a current-tab dictionary snapshot across generator/dictionary navigation, keyed by configuration and username, with 30-second freshness, coalesced complete scans and last-successful fallback.
+- [x] Replace per-suggestion hydration scans with spelling-index lookups; restore all suggestions with one scan and update only changed rows.
+- [x] Track confirmed writes in the cache, invalidate uncertain/partial mutations, reject read/write races, and clear session snapshots on sign-out.
+- [x] Avoid settings startup waits when valid local rules exist; preserve local edits and restrict periodic settings reads to visible/focused pages.
+- [x] Add deterministic read-count, navigation, cache-failure, startup and grouping regressions plus opt-in local performance diagnostics.
+
+For diagnostics, set `sessionStorage.setItem('secret.performance.debug', '1')` in the browser console, then reload. Numeric-only measurements appear under “Language performance”; inspect `SECRET_DICTIONARY_CACHE.metrics` for counters and timings. Disable with `sessionStorage.removeItem('secret.performance.debug')`. No word/definition contents or remote telemetry are logged. Synthetic tests demonstrate one grouping for repeated relationship lookups and one cold scan for 50 restored suggestions; real browser/mobile navigation and live AWS latency remain manual checks.
+
 ## Language analytics
 
 - [x] Add an authenticated analytics page and floating shortcut, with vowel/consonant charts, category filters, starts/ends views, and accessible count tables.

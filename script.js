@@ -44,7 +44,8 @@ const generatorConstraints = window.SECRET_GENERATOR_CONSTRAINTS.create({
   document,
   config: () => activeRuleConfig,
   onChange: () => clampSyllables(false),
-  requestRefresh: () => { if (generatorSync) void generatorSync.request(); }
+  group:items=>{const store=getGeneratorSnapshotStore();return store?.peek()===items?store.words():SECRET_MEANING_REQUESTS.groupWords(items);},
+  requestRefresh: (options={}) => { if(options.force)getGeneratorSnapshotStore()?.invalidate();if (generatorSync) void generatorSync.request(); }
 });
 const rowStateById = new Map();
 let generatorDefinitionPicker = null;
@@ -661,10 +662,16 @@ function findNewestCurrentUserMatch(items, currentUserId) {
 }
 
 async function lookupWordState(word) {
-  if (!isHeartsConfigured || !await ensureAwsCredentials()) return null;
-  // The GSI may omit review metadata or lag behind a heart write. Read the
-  // authoritative records for this spelling before applying dictionary state.
-  const matches = await scanWordMatches(word);
+  if (!isHeartsConfigured) return null;
+  const store=getGeneratorSnapshotStore();let matches;
+  if(store){
+    if(store.peek()===null)await store.refresh();
+    matches=store.matches(word);
+    if(!store.fresh()&&generatorSync)void generatorSync.request();
+  }else{
+    if(!await ensureAwsCredentials())return null;
+    matches=await scanWordMatches(word);
+  }
   const currentUserId = getCurrentUserId();
   return { currentUserId, matches,
     currentUserMatch: findNewestCurrentUserMatch(matches, currentUserId),
@@ -672,6 +679,8 @@ async function lookupWordState(word) {
     latestImportedMeaningMatch: sortMatchesByMeaningDesc(matches).find(item =>
       trimOrEmpty(item.user) !== currentUserId && hasMeaningText(item.meaning)) || null };
 }
+function getGeneratorSnapshotStore(){return window.SECRET_DICTIONARY_CACHE?.forRuntime(awsRuntime)||null;}
+function setGeneratorSyncStatus(message){const field=document.getElementById?.("generatorSyncStatus");if(field)field.textContent=message;}
 
 async function synthesize(word, ipa) {
   const currentPollyClient = getPollyClient();
@@ -1200,7 +1209,6 @@ function restorePersistedRows() {
     generatedWords.add(state.word);
     resultsList.append(row);
     renderRow(state.rowId);
-    void hydrateWordState(state.rowId);
   }
 
   if (skippedRows > 0) {
@@ -1377,7 +1385,8 @@ function rememberGeneratorRecord(item) {
   }
 }
 
-async function readGeneratorDefinitionRequests() {
+async function readGeneratorDefinitionRequests({force=false}={}) {
+  const store=getGeneratorSnapshotStore();if(store)return store.refresh({force});
   if (!isHeartsConfigured || !await ensureAwsCredentials()) throw new Error("Database access is unavailable.");
   const items = [];
   let cursor;
@@ -1392,7 +1401,7 @@ async function readGeneratorDefinitionRequests() {
 function getGeneratorDefinitionPicker() {
   if (!generatorDefinitionPicker) generatorDefinitionPicker = SECRET_DEFINITION_PICKER.create({
     client: getHeartsTableClient, table: awsConfig.heartsTableName, user: getCurrentUserId,
-    read: readGeneratorDefinitionRequests,
+    read: ()=>readGeneratorDefinitionRequests({force:true}),
     onMutation: () => { generatorRevision++; },
     onBusyChange: () => {
       const state = rowStateById.get(generatorPickerRowId);
@@ -2228,15 +2237,17 @@ if (clearAllBtn) {
 
 window.SECRET_ROOT_CONTEXT = window.SECRET_ROOT_GENERATION?.create({client:getHeartsTableClient,table:awsConfig.heartsTableName,
   user:getCurrentUserId,inputs:{start:wordPrefixInput,end:wordSuffixInput},revalidate:()=>clampSyllables(false),
-  rerender:()=>{for(const state of rowStateById.values())renderRow(state.rowId);},refresh:()=>{if(generatorSync)void generatorSync.request();}});
+  rerender:()=>{for(const state of rowStateById.values())renderRow(state.rowId);},refresh:()=>{getGeneratorSnapshotStore()?.invalidate();if(generatorSync)void generatorSync.request();}});
 
 generatorSync = SECRET_COOPERATIVE_REFRESH.start({
   isBusy: () => Boolean(window.SECRET_ROOT_CONTEXT?.isBusy()) || Boolean(generatorDefinitionPicker?.isOpen()) || [...rowStateById.values()].some(state => state.isEditing || state.saveStatus !== "idle") ||
     Boolean(document.activeElement && resultsList.contains(document.activeElement) &&
       document.activeElement.matches("input, textarea, select")),
   version: () => `${generatorRevision}:${generatorConstraints.enabled()}:${rowStateById.size > 0}`,
+  nextDelay:()=>getGeneratorSnapshotStore()?.remaining()??30000,
   read: async () => {
     if (rowStateById.size === 0 && !generatorConstraints.enabled() && !window.SECRET_ROOT_CONTEXT?.isActive()) return [];
+    const store=getGeneratorSnapshotStore();if(store){if(!store.fresh())setGeneratorSyncStatus(store.peek()?"Showing cached saved words; refreshing…":"Loading saved hearts and definitions…");return store.refresh();}
     if (!isHeartsConfigured || !await ensureAwsCredentials()) throw new Error("Database access is unavailable.");
     const items = [];
     let lastKey;
@@ -2249,12 +2260,19 @@ generatorSync = SECRET_COOPERATIVE_REFRESH.start({
     return items;
   },
   apply: items => {
+    if(!rowStateById.size&&!generatorConstraints.enabled()&&!window.SECRET_ROOT_CONTEXT?.isActive())return;
+    const started=window.performance?.now?.()??Date.now(),store=getGeneratorSnapshotStore();
+    let byWord;
+    if(!store||store.peek()!==items){byWord=new Map();for(const item of items){if(!item.word||!item.pronunciation)continue;if(!byWord.has(item.word))byWord.set(item.word,[]);byWord.get(item.word).push(item);}}
     // A skipped read with no rows and normalization off is not a dictionary snapshot.
     if (rowStateById.size || generatorConstraints.enabled()) generatorConstraints.accept(items);
     if (generatorDefinitionPicker) generatorDefinitionPicker.load(items);
     window.SECRET_ROOT_CONTEXT?.accept(items);
     for (const state of rowStateById.values()) {
-      const matches = items.filter(item => item.word === state.word && item.pronunciation);
+      const matches = byWord?byWord.get(state.word)||[]:store.matches(state.word);
+      const signature=SECRET_COOPERATIVE_REFRESH.fingerprint(matches);
+      if(state.dictionarySignature===signature)continue;
+      state.dictionarySignature=signature;
       const own = findNewestCurrentUserMatch(matches, getCurrentUserId());
       if (own) applyCurrentUserMatchToState(state, own);
       else if (state.hasPersistedRecord) {
@@ -2274,13 +2292,33 @@ generatorSync = SECRET_COOPERATIVE_REFRESH.start({
       renderRow(state.rowId);
     }
     flushPersistedRowsSave();
+    window.SECRET_DICTIONARY_CACHE?.measure("generatorRenderMilliseconds",(window.performance?.now?.()??Date.now())-started);
+    window.SECRET_DICTIONARY_CACHE?.measure("generatorUsableMilliseconds",window.performance?.now?.()??0);
   },
-  onSuccess: () => generatorConstraints.success(),
+  onSuccess: () => {generatorConstraints.success();setGeneratorSyncStatus("");const retry=document.getElementById?.("generatorDictionaryRetry");if(retry)retry.hidden=true;},
   onError: error => {
     generatorConstraints.error();
     window.SECRET_ROOT_CONTEXT?.error();
+    setGeneratorSyncStatus("Could not refresh saved words. Keeping the last successful view; automatic refresh will retry.");
+    const retry=document.getElementById?.("generatorDictionaryRetry");if(retry)retry.hidden=false;
     console.warn("Shared refresh failed; keeping current words and normalization counts.", error);
   }
 });
 window.addEventListener("beforeunload", () => generatorSync.stop());
-if (window.SECRET_ROOT_CONTEXT) { clampSyllables(false); void generatorSync.request(); }
+document.getElementById?.("generatorDictionaryRetry")?.addEventListener("click",()=>{getGeneratorSnapshotStore()?.invalidate();void generatorSync.request();});
+if (window.SECRET_ROOT_CONTEXT)clampSyllables(false);
+const initialSnapshot=getGeneratorSnapshotStore()?.peek();
+if(initialSnapshot&&(rowStateById.size||generatorConstraints.enabled()||window.SECRET_ROOT_CONTEXT?.isActive())){
+  // Paint cached hearts and definitions before waiting on AWS credentials.
+  const byWord=new Map();for(const item of initialSnapshot){if(!item.word||!item.pronunciation)continue;if(!byWord.has(item.word))byWord.set(item.word,[]);byWord.get(item.word).push(item);}
+  for(const state of rowStateById.values()){
+    const matches=byWord.get(state.word)||[],own=findNewestCurrentUserMatch(matches,getCurrentUserId());
+    if(own)applyCurrentUserMatchToState(state,own);
+    else if(state.hasPersistedRecord){state.hearted=false;state.ownMeaning=null;state.meaningUpdatedTimestamp=null;state.hasPersistedRecord=false;state.recordRowId="";state.draftMeaning="";state.hasDraftCache=false;state.draftUpdatedTimestamp=null;}
+    applyGeneratorDictionaryMatches(state,matches);syncDisplayMeaning(state,findNewestNonEmptyMeaningMatch(matches));
+    state.dictionarySignature=SECRET_COOPERATIVE_REFRESH.fingerprint(matches);renderRow(state.rowId);
+  }
+  generatorConstraints.accept(initialSnapshot);window.SECRET_ROOT_CONTEXT?.accept(initialSnapshot);
+  generatorSync.seed(initialSnapshot);
+}
+if(rowStateById.size||generatorConstraints.enabled()||window.SECRET_ROOT_CONTEXT?.isActive())void generatorSync.request();

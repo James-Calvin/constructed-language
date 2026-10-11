@@ -39,7 +39,7 @@
     const entries = inventory(config);
     const counts = new Map(entries.map(entry => [entry.symbol, { ...entry,
       defined: 0, candidate: 0, undefined: 0, total: 0, percentage: 0 }]));
-    const words = grouping.groupWords(raw).filter(word => selected.has(!word.hasDefinition
+    const words = (options.groupedWords || grouping.groupWords(raw)).filter(word => selected.has(!word.hasDefinition
       ? "undefined" : word.definitionReview?.status === "candidate" ? "candidate" : "defined"));
     const excluded = [];
     let analyzed = 0;

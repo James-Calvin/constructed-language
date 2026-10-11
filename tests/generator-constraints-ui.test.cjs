@@ -62,6 +62,8 @@ const context={
   generatorConstraints:{enabled:()=>normalization,accept:items=>{snapshots++;assert.equal(items.length,1);},success:()=>successes++,error:()=>failures++},
   rowStateById:rows,document:{activeElement:null},generatorRevision:revision,
   generatorDefinitionPicker:null,
+  getGeneratorSnapshotStore:()=>null,
+  setGeneratorSyncStatus(){},
   isHeartsConfigured:true,ensureAwsCredentials:async()=>true,
   getHeartsTableClient:()=>({scan:()=>({promise:async()=>({Items:data})})}),awsConfig:{heartsTableName:'secretWords'},
   window:{addEventListener(){}},flushPersistedRowsSave(){},console:{warn(){}}

@@ -101,6 +101,7 @@
       if (storage) {
         storage.removeItem(ACCESS_STORAGE_KEY);
       }
+      globalScope.SECRET_DICTIONARY_CACHE?.clearAll();
       globalScope.SECRET_CURRENT_USER = null;
       globalScope.location.reload();
     });

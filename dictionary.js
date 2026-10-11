@@ -47,16 +47,13 @@ let dictionaryRevision = 0;
 let dictionaryLoaded = false;
 let definitionPicker;
 let wordRelationships;
-let relationshipPanel;
+let dictionarySnapshot=[];
+let dictionaryViewSignature;
+function getDictionarySnapshotStore(){return window.SECRET_DICTIONARY_CACHE?.forRuntime(awsRuntime)||null;}
 function getWordRelationships() {
-  if (!wordRelationships) wordRelationships = SECRET_RELATIONSHIPS.create({client:getHeartsTableClient,
-    table:awsConfig.heartsTableName,user:()=>currentUserId});
+  if (!wordRelationships) {wordRelationships = SECRET_RELATIONSHIPS.create({client:getHeartsTableClient,
+    table:awsConfig.heartsTableName,user:()=>currentUserId});wordRelationships.load(dictionarySnapshot);}
   return wordRelationships;
-}
-function getRelationshipPanel() {
-  if (!relationshipPanel) relationshipPanel = SECRET_RELATIONSHIP_PANEL.create({service:getWordRelationships(),
-    ready:ensureAwsCredentials,onChange:()=>{dictionaryRevision++;refreshDictionaryView({preserveCount:renderedGroupCount,preferredWord:selectedWord});}});
-  return relationshipPanel;
 }
 
 function getDefinitionPicker() {
@@ -64,14 +61,14 @@ function getDefinitionPicker() {
     client: getHeartsTableClient, table: awsConfig.heartsTableName, user: () => currentUserId,
     read: async () => {
       if (!await ensureAwsCredentials()) throw new Error("Database access is unavailable.");
-      return scanDictionaryEntries();
+      return scanDictionaryEntries({force:true});
     },
     onMutation: () => { dictionaryRevision++; },
     onChange: () => refreshDictionaryView({ preserveCount: renderedGroupCount, preferredWord: selectedWord }),
     onAssigned: item => {
       const record = normalizeDictionaryEntry(item);
       recordsById.set(record.id, record);
-      getWordRelationships().remember(item);
+      if(wordRelationships)wordRelationships.remember(item);
       activeFilter = FILTERS.CANDIDATE;
       selectedWord = item.word;
       rebuildGroupsFromEntries();
@@ -551,7 +548,8 @@ function buildDictionaryTableItem(record) {
   };
 }
 
-async function scanDictionaryEntries() {
+async function scanDictionaryEntries({force=false}={}) {
+  const store=getDictionarySnapshotStore();if(store)return store.refresh({force});
   const currentHeartsClient = getHeartsTableClient();
   if (!currentHeartsClient) {
     return [];
@@ -1439,7 +1437,6 @@ function createGroupCard(group) {
   const definitionSelection = getDefinitionPicker().render(group.word);
   if (definitionSelection) card.appendChild(definitionSelection);
   card.appendChild(getWordNotes().render(group.word));
-  card.appendChild(getRelationshipPanel().render(group.word));
 
   if (historyEntries.length > 0) {
     const history = document.createElement("div");
@@ -1916,7 +1913,7 @@ async function putDictionaryRecord(record, options = {}) {
   const item = buildDictionaryTableItem(record);
   await SECRET_DEFINITIONS.save(currentHeartsClient, awsConfig.heartsTableName, item, options);
   Object.assign(record, item);
-  if (typeof SECRET_RELATIONSHIPS !== "undefined") getWordRelationships().remember(item);
+  if (typeof wordRelationships !== "undefined" && wordRelationships) wordRelationships.remember(item);
 }
 
 async function deleteDictionaryRecord(record) {
@@ -2004,6 +2001,7 @@ async function handleSaveWordEdit(word) {
     }
     await Promise.all(snapshots.map(({ record }) => putDictionaryRecord(record)));
     await getWordNotes().rename(word, nextWord);
+    getWordRelationships().load(await getWordRelationships().read());
     await getWordRelationships().renameWord(word, nextWord);
 
     resetWordEditor();
@@ -2106,6 +2104,7 @@ async function handleDeleteWord(word) {
 
   try {
     await ensureAwsCredentials();
+    getWordRelationships().load(await getWordRelationships().read());
     await getWordRelationships().removeWord(word);
     await Promise.all(recordsToDelete.map((record) => deleteDictionaryRecord(record)));
     await getWordNotes().remove(word);
@@ -2761,10 +2760,16 @@ function dictionaryRefreshBusy() {
   const field = document.activeElement;
   return !dictionaryLoaded || getDefinitionPicker().isOpen() || manualComposerState.isOpen || Boolean(wordEditorState.word) ||
     Boolean(wordEditorState.deleteConfirmationWord) || groups.some(group => group.isEditing || group.saveStatus !== "idle") ||
-    getWordNotes().isBusy() || getRelationshipPanel().isBusy() || getWordRelationships().isBusy() || Boolean(field && dictionaryList.contains(field) && field.matches("input, textarea, select"));
+    getWordNotes().isBusy() || Boolean(wordRelationships?.isBusy()) || Boolean(field && dictionaryList.contains(field) && field.matches("input, textarea, select"));
 }
 
 function applyDictionarySnapshot(rawItems, background = true) {
+  const started=window.performance?.now?.()??Date.now();
+  dictionarySnapshot=rawItems;
+  if(wordRelationships)wordRelationships.load(rawItems);
+  const signature=SECRET_COOPERATIVE_REFRESH.fingerprint(rawItems.filter(row=>row.word||row.noteData||row.conceptData));
+  if(background&&signature===dictionaryViewSignature)return;
+  dictionaryViewSignature=signature;
   const previousCount = renderedGroupCount;
   const scroll = { x: window.scrollX, y: window.scrollY };
   const anchor = background && [...dictionaryList.children].find(card => card.getBoundingClientRect().bottom > 0);
@@ -2772,7 +2777,6 @@ function applyDictionarySnapshot(rawItems, background = true) {
   const anchorTop = anchor && anchor.getBoundingClientRect().top;
   getWordNotes().load(rawItems);
   getDefinitionPicker().load(rawItems);
-  getWordRelationships().load(rawItems);
   const previousRecords = new Map(recordsById);
   recordsById.clear();
   for (const rawItem of rawItems) {
@@ -2789,6 +2793,8 @@ function applyDictionarySnapshot(rawItems, background = true) {
     const offset = nextAnchor ? nextAnchor.getBoundingClientRect().top - anchorTop : 0;
     window.scrollTo({ left: scroll.x, top: scroll.y + offset, behavior: "instant" });
   }
+  window.SECRET_DICTIONARY_CACHE?.measure("dictionaryRenderMilliseconds",(window.performance?.now?.()??Date.now())-started);
+  window.SECRET_DICTIONARY_CACHE?.measure("dictionaryUsableMilliseconds",window.performance?.now?.()??0);
 }
 
 async function loadDictionary() {
@@ -2805,6 +2811,13 @@ async function loadDictionary() {
   }
 
   setStatus("Loading dictionary...");
+
+  currentUserId=trimOrEmpty(window.SECRET_CURRENT_USER?.id);
+  const store=getDictionarySnapshotStore(),cached=store?.peek();
+  if(cached){applyDictionarySnapshot(cached,false);dictionarySync.seed(cached);
+    dictionaryLoaded=true;
+    document.getElementById("dictionarySyncStatus").textContent=store.fresh()?"":"Showing cached words; refreshing…";
+    if(!store.fresh())void dictionarySync.request();return;}
 
   const ready = await ensureAwsCredentials();
   if (!ready) {
@@ -2954,6 +2967,7 @@ window.addEventListener("beforeunload", () => {
 const dictionarySync = SECRET_COOPERATIVE_REFRESH.start({
   isBusy: dictionaryRefreshBusy,
   version: () => `${dictionaryRevision}:${getWordNotes().version()}`,
+  nextDelay:()=>getDictionarySnapshotStore()?.remaining()??30000,
   read: async () => {
     if (!isDictionaryConfigured || !await ensureAwsCredentials()) throw new Error("Database access is unavailable.");
     return scanDictionaryEntries();
@@ -2966,4 +2980,8 @@ const dictionarySync = SECRET_COOPERATIVE_REFRESH.start({
   }
 });
 window.addEventListener("beforeunload", () => dictionarySync.stop());
+document.getElementById("dictionaryRetry")?.addEventListener("click",()=>{
+  if(dictionaryRefreshBusy())return;
+  getDictionarySnapshotStore()?.invalidate();void dictionarySync.request();
+});
 void loadDictionary();

@@ -167,6 +167,8 @@
 
       if (!heartsTableClient) {
         heartsTableClient = new globalScope.AWS.DynamoDB.DocumentClient({ region: awsConfig.region });
+        globalScope.SECRET_DICTIONARY_CACHE?.trackClient(heartsTableClient,()=>
+          globalScope.SECRET_DICTIONARY_CACHE.forRuntime({awsConfig,getHeartsTableClient,ensureAwsCredentials}));
       }
 
       return heartsTableClient;
