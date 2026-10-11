@@ -90,7 +90,8 @@ async function harness(warm, options = {}) {
   for (const match of html.matchAll(/<([a-z]+)[^>]*\bid="([^"]+)"[^>]*>/g)) {
     const element = new Element(match[1], doc); element.id = match[2]; nodes[match[2]] = element;
   }
-  nodes.flashcardWords.checked = nodes.flashcardSentences.checked = true;
+  nodes.flashcardWords.checked = true;
+  nodes.flashcardSentences.checked = Boolean(options.sentences);
   const add = nodes.flashcardAdd;
   add.append(nodes.flashcardSentence, nodes.flashcardTranslation, nodes.flashcardClear, new Element('button', doc));
   const addError = new Element('p', doc); addError.className = 'flashcard-error'; add.append(addError);
@@ -130,7 +131,7 @@ async function harness(warm, options = {}) {
 }
 function findButton(root, text) { const found = root.querySelectorAll('button').find(button => button.textContent === text); assert.ok(found, text); return found; }
 async function run() {
-  const ui = await harness(true), n = ui.nodes;
+  const ui = await harness(true, { sentences: true }), n = ui.nodes;
   assert.equal(ui.scans(), 0, 'Fresh-cache study does not scan');
   assert.equal(n.flashcardText.textContent, 'ka');
   assert.equal(n.flashcardIpa.textContent, 'ka');
@@ -255,13 +256,16 @@ async function run() {
   const cold = await harness(false);
   assert.equal(cold.scans(), 1, 'Cold study uses one shared scan');
   assert.equal(cold.nodes.flashcardText.textContent, 'ka');
-  const resume = await harness(true);
+  assert.equal(cold.nodes.flashcardSentences.checked, false, 'Sentences start unchecked');
+  assert.equal(cold.nodes.flashcardProgress.textContent, 'Card 1 of 1');
+  const resume = await harness(true, { sentences: true });
   resume.nodes.flashcardNext.fire('click'); resume.nodes.flashcardFace.fire('click');
   resume.nodes.flashcardCandidates.checked = true; resume.nodes.flashcardCandidates.fire('change');
   const returned = await harness(true, { saved: resume.saved, database: resume.database });
   assert.equal(returned.nodes.flashcardProgress.textContent, 'Card 2 of 2');
   assert.equal(returned.nodes.flashcardText.textContent, 'my sun', 'Returning restores the displayed side');
   assert.equal(returned.nodes.flashcardCandidates.checked, true, 'Pending selections restore separately from the frozen deck');
+  assert.equal(returned.nodes.flashcardSentences.checked, true, 'Saved sentence selections override the new default');
   assert.equal(returned.nodes.flashcardUpdates.textContent, 'Your selection has changed. Shuffle the deck for it to take effect.');
   returned.nodes.flashcardCandidates.checked = false; returned.nodes.flashcardCandidates.fire('change');
   assert.equal(returned.nodes.flashcardShuffle.textContent, 'Shuffle', 'Reverting selections clears their warning');
@@ -291,7 +295,7 @@ async function run() {
   const otherUser = await harness(true, { saved: resume.saved, username: 'bob' });
   assert.equal(otherUser.nodes.flashcardWords.checked, true, 'Other usernames do not inherit the saved selections');
   const deniedStorage = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); }, removeItem() {} };
-  const denied = await harness(true, { storage: deniedStorage });
+  const denied = await harness(true, { storage: deniedStorage, sentences: true });
   denied.nodes.flashcardNext.fire('click'); assert.equal(denied.nodes.flashcardProgress.textContent, 'Card 2 of 2');
   const html = fs.readFileSync('flashcards.html', 'utf8');
   assert.match(html, /src="auth.js"/);
@@ -301,6 +305,7 @@ async function run() {
   assert.match(html, /id="flashcardBack"/);
   assert.match(html, /id="flashcardWords"[^>]*checked> Defined words/);
   assert.match(html, /id="flashcardCandidates" type="checkbox"> Candidates/);
+  assert.match(html, /id="flashcardSentences" type="checkbox"> Sentences/);
   assert.doesNotMatch(html, /flashcardFlip/);
   assert.match(html, /<\/button>\s*<button id="flashcardPlay"/, 'Play is a sibling, not a nested button');
   assert.doesNotMatch(html, /flashcardRetry|Refresh \/ Retry/);
