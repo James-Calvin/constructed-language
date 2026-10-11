@@ -94,6 +94,7 @@ async function harness(warm) {
   const context = {
     console, document: doc, crypto: require('node:crypto').webcrypto, Math: Object.assign(Object.create(Math), { random: () => 0.75 }),
     SECRET_CURRENT_USER: { id: 'alice' }, SECRET_MEANING_REQUESTS: grouping,
+    SECRET_FLASHCARD_MOTION: require('../flashcard-motion.js'),
     SECRET_FLASHCARD_DECK: { ...deck, round: cards => deck.round(cards, () => 0.75) }, SECRET_FLASHCARD_SERVICE: serviceApi,
     SECRET_DICTIONARY_CACHE: { forRuntime: () => store }, scrollX: 0, scrollY: 123,
     scrollTo(x, y) { this.scrollX = x; this.scrollY = y; }, addEventListener() {},
@@ -125,6 +126,8 @@ async function run() {
   assert.equal(n.flashcardText.textContent, 'ka');
   assert.equal(n.flashcardIpa.textContent, 'ka');
   assert.equal(n.flashcardProgress.textContent, 'Card 1 of 2');
+  assert.equal(n.flashcardBack.disabled, true);
+  n.flashcardBack.fire('click'); assert.equal(n.flashcardProgress.textContent, 'Card 1 of 2');
   assert.equal(n.flashcardStatus.hidden, true, 'Routine cache status is not displayed');
   assert.equal(n.flashcardPlay.hidden, false);
   await n.flashcardPlay.fire('click');
@@ -140,13 +143,20 @@ async function run() {
   assert.equal(n.flashcardAudioStatus.hidden, true);
   assert.ok(ui.stops() > 0, 'Flipping stops pronunciation');
   n.flashcardFace.fire('click'); assert.equal(n.flashcardText.textContent, 'ka');
-  n.flashcardFlip.fire('click'); assert.equal(n.flashcardText.textContent, 'sun');
+  n.flashcardFace.fire('click'); assert.equal(n.flashcardText.textContent, 'sun');
   assert.equal(n.flashcardIpa.hidden, true);
   const changed = { ...ui.word, meaning: 'bright sun' };
   ui.store.upsert(changed); ui.options.apply(ui.store.peek());
   assert.equal(n.flashcardText.textContent, 'sun', 'Background refresh freezes the current round');
   assert.match(n.flashcardUpdates.textContent, /next round/);
   n.flashcardNext.fire('click'); assert.equal(n.flashcardText.textContent, '<b>ka mi</b>');
+  assert.equal(n.flashcardBack.disabled, false);
+  n.flashcardBack.fire('click');
+  assert.equal(n.flashcardProgress.textContent, 'Card 1 of 2');
+  assert.equal(n.flashcardText.textContent, 'ka', 'Back revisits the previous card on its initial side');
+  n.flashcardFace.fire('click');
+  assert.equal(n.flashcardText.textContent, 'sun', 'Back retains the frozen round, not newer database content');
+  n.flashcardNext.fire('click');
   assert.equal(n.flashcardPlay.hidden, true, 'Sentence cards do not show word pronunciation controls');
   const scansBeforeShuffle = ui.scans();
   n.flashcardShuffle.fire('click');
@@ -155,11 +165,15 @@ async function run() {
   assert.equal(ui.scans(), scansBeforeShuffle, 'Shuffle does not force a database read');
   n.flashcardNext.fire('click');
   assert.equal(n.flashcardText.children.length, 0, 'Sentence markup is displayed as text');
-  n.flashcardFlip.fire('click'); assert.equal(n.flashcardText.textContent, 'my sun');
+  n.flashcardFace.fire('click'); assert.equal(n.flashcardText.textContent, 'my sun');
   n.flashcardNext.fire('click'); assert.equal(n.flashcardAgain.hidden, false);
   assert.equal(n.flashcardFace.disabled, true);
   assert.equal(ui.doc.activeElement, n.flashcardAgain);
-  n.flashcardAgain.fire('click'); n.flashcardFlip.fire('click');
+  n.flashcardBack.fire('click');
+  assert.equal(n.flashcardProgress.textContent, 'Card 2 of 2', 'Back works from the completed round');
+  assert.equal(n.flashcardText.textContent, '<b>ka mi</b>');
+  n.flashcardNext.fire('click');
+  n.flashcardAgain.fire('click'); n.flashcardFace.fire('click');
   assert.equal(n.flashcardText.textContent, 'bright sun');
   n.flashcardWords.checked = false; n.flashcardSentences.checked = false; n.flashcardWords.fire('change');
   assert.match(n.flashcardText.textContent, /Select Words or Sentences/);
@@ -215,6 +229,8 @@ async function run() {
   assert.match(html, /src="auth.js"/);
   assert.match(html, /<button id="flashcardFace" type="button"/);
   assert.match(html, /id="flashcardShuffle"/);
+  assert.match(html, /id="flashcardBack"/);
+  assert.doesNotMatch(html, /flashcardFlip/);
   assert.match(html, /<\/button>\s*<button id="flashcardPlay"/, 'Play is a sibling, not a nested button');
   assert.doesNotMatch(html, /flashcardRetry|Refresh \/ Retry/);
   assert.match(html, /type="application\/x-protected-script" data-protected-src="flashcards.js"/);

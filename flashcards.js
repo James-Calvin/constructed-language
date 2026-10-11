@@ -9,6 +9,7 @@
   });
   const el = id => document.getElementById(id);
   const addForm = el("flashcardAdd");
+  const motion = root.SECRET_FLASHCARD_MOTION.create({ element: el("flashcardCard") });
   let pronunciationAudio = null, audioVersion = 0;
   function setStatus(text = "") {
     el("flashcardStatus").textContent = text;
@@ -53,7 +54,8 @@
     const card = currentRound[position];
     el("flashcardFace").disabled = !card;
     el("flashcardShuffle").disabled = !loaded;
-    el("flashcardFlip").hidden = !card;
+    el("flashcardBack").hidden = !currentRound.length;
+    el("flashcardBack").disabled = position === 0;
     el("flashcardNext").hidden = !card;
     el("flashcardAgain").hidden = !currentRound.length || Boolean(card);
     el("flashcardProgress").textContent = card ? `Card ${position + 1} of ${currentRound.length}` : "";
@@ -70,6 +72,7 @@
       : "No cards in this selection yet. Define words in the dictionary or add a shared sentence below.";
   }
   function startRound() {
+    motion.cancel();
     const cards = available();
     currentRound = deck.round(cards);
     roundSignature = fingerprint(cards);
@@ -216,9 +219,9 @@
   el("flashcardSentences").addEventListener("change", startRound);
   function flipCard() {
     if (!currentRound[position]) return;
-    flipped = !flipped; renderStudy();
+    stopAudio();
+    void motion.flip(() => { flipped = !flipped; renderStudy(); });
   }
-  el("flashcardFlip").addEventListener("click", flipCard);
   el("flashcardFace").addEventListener("click", flipCard);
   el("flashcardPlay").addEventListener("click", async event => {
     event.stopPropagation();
@@ -242,13 +245,19 @@
       }
     }
   });
+  el("flashcardBack").addEventListener("click", () => {
+    if (position <= 0) return;
+    motion.slide(() => { position--; flipped = false; renderStudy(); }, -1);
+    if (position === 0) el("flashcardFace").focus({ preventScroll: true });
+  });
   el("flashcardNext").addEventListener("click", () => {
-    position++; flipped = false; renderStudy();
+    if (!currentRound[position]) return;
+    motion.slide(() => { position++; flipped = false; renderStudy(); });
     if (position >= currentRound.length) el("flashcardAgain").focus({ preventScroll: true });
   });
   el("flashcardAgain").addEventListener("click", () => {
     startRound();
-    el(currentRound.length ? "flashcardFlip" : "flashcardWords").focus({ preventScroll: true });
+    el(currentRound.length ? "flashcardFace" : "flashcardWords").focus({ preventScroll: true });
   });
   el("flashcardShuffle").addEventListener("click", startRound);
   el("flashcardClear").addEventListener("click", () => { addForm.reset(); addForm.querySelector(".flashcard-error").textContent = ""; revision++; });
@@ -258,7 +267,7 @@
     void mutate(() => service.add(el("flashcardSentence").value, el("flashcardTranslation").value),
       addForm, addForm.querySelector(".flashcard-error"));
   });
-  root.addEventListener("beforeunload", () => { sync.stop(); pronunciationAudio?.dispose(); });
+  root.addEventListener("beforeunload", () => { sync.stop(); motion.cancel(); pronunciationAudio?.dispose(); });
   const cached = store?.peek();
   if (cached !== null && cached !== undefined) {
     applySnapshot(cached); sync.seed(cached);

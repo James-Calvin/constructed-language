@@ -14,7 +14,7 @@
       <a class="page-nav-link" href="dictionary.html">Dictionary</a>
     </nav>
     <h1>Flashcards</h1>
-    <p>Practice defined words and shared sentences. Click the card or use Flip to check the other side, or skip with Next.</p>
+    <p>Practice defined words and shared sentences. Click the card to flip it, or use Back and Next to move between cards.</p>
     <fieldset class="flashcard-filters">
       <legend>Include in this round</legend>
       <label><input id="flashcardWords" type="checkbox" checked> Words</label>
@@ -27,7 +27,7 @@
     <p id="flashcardUpdates" role="status"></p>
     <section aria-label="Study cards" class="flashcard-study">
       <p id="flashcardProgress" role="status"></p>
-      <div class="flashcard-card">
+      <div id="flashcardCard" class="flashcard-card">
       <button id="flashcardFace" type="button" class="flashcard-face" title="Flip card" aria-live="polite" aria-atomic="true">
         <span id="flashcardSide" class="flashcard-side"></span>
         <span id="flashcardText" class="flashcard-text"></span>
@@ -41,7 +41,7 @@
       </div>
       <p id="flashcardAudioStatus" class="flashcard-error" role="status" hidden></p>
       <div class="flashcard-actions">
-        <button id="flashcardFlip" class="dictionary-toggle-btn" type="button">Flip</button>
+        <button id="flashcardBack" class="dictionary-toggle-btn" type="button">Back</button>
         <button id="flashcardNext" class="dictionary-toggle-btn" type="button">Next</button>
         <button id="flashcardAgain" class="dictionary-toggle-btn" type="button" hidden>Study again</button>
       </div>
@@ -74,6 +74,7 @@
   <script type="application/x-protected-script" data-protected-src="flashcard-deck.js"></script>
   <script type="application/x-protected-script" data-protected-src="flashcard-service.js"></script>
   <script type="application/x-protected-script" data-protected-src="flashcard-audio.js"></script>
+  <script type="application/x-protected-script" data-protected-src="flashcard-motion.js"></script>
   <script type="application/x-protected-script" data-protected-src="flashcards.js"></script>
 </body>
 </html>
