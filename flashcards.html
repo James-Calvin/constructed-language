@@ -14,24 +14,32 @@
       <a class="page-nav-link" href="dictionary.html">Dictionary</a>
     </nav>
     <h1>Flashcards</h1>
-    <p>Practice defined words and shared sentences. Flip to check the other side, or skip with Next.</p>
+    <p>Practice defined words and shared sentences. Click the card or use Flip to check the other side, or skip with Next.</p>
     <fieldset class="flashcard-filters">
       <legend>Include in this round</legend>
       <label><input id="flashcardWords" type="checkbox" checked> Words</label>
       <label><input id="flashcardSentences" type="checkbox" checked> Sentences</label>
     </fieldset>
     <div class="flashcard-sync">
-      <p id="flashcardStatus" role="status">Loading cards…</p>
-      <button id="flashcardRetry" class="dictionary-toggle-btn" type="button">Refresh / Retry</button>
+      <button id="flashcardShuffle" class="dictionary-toggle-btn" type="button">Shuffle</button>
     </div>
+    <p id="flashcardStatus" class="flashcard-error" role="status" hidden></p>
     <p id="flashcardUpdates" role="status"></p>
     <section aria-label="Study cards" class="flashcard-study">
       <p id="flashcardProgress" role="status"></p>
-      <div class="flashcard-face" aria-live="polite" aria-atomic="true">
-        <p id="flashcardSide" class="flashcard-side"></p>
-        <p id="flashcardText" class="flashcard-text"></p>
-        <p id="flashcardIpa" class="flashcard-ipa"></p>
+      <div class="flashcard-card">
+      <button id="flashcardFace" type="button" class="flashcard-face" title="Flip card" aria-live="polite" aria-atomic="true">
+        <span id="flashcardSide" class="flashcard-side"></span>
+        <span id="flashcardText" class="flashcard-text"></span>
+        <span id="flashcardIpa" class="flashcard-ipa"></span>
+      </button>
+      <button id="flashcardPlay" class="dictionary-toggle-btn flashcard-play" type="button" aria-label="Play pronunciation" title="Play pronunciation" hidden>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <path d="M11 5 6 9H3v6h3l5 4V5Z M15 8a6 6 0 0 1 0 8 M18 5a10 10 0 0 1 0 14" />
+        </svg>
+      </button>
       </div>
+      <p id="flashcardAudioStatus" class="flashcard-error" role="status" hidden></p>
       <div class="flashcard-actions">
         <button id="flashcardFlip" class="dictionary-toggle-btn" type="button">Flip</button>
         <button id="flashcardNext" class="dictionary-toggle-btn" type="button">Next</button>
@@ -65,6 +73,7 @@
   <script type="application/x-protected-script" data-protected-src="cooperative-refresh.js"></script>
   <script type="application/x-protected-script" data-protected-src="flashcard-deck.js"></script>
   <script type="application/x-protected-script" data-protected-src="flashcard-service.js"></script>
+  <script type="application/x-protected-script" data-protected-src="flashcard-audio.js"></script>
   <script type="application/x-protected-script" data-protected-src="flashcards.js"></script>
 </body>
 </html>

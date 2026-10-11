@@ -17,15 +17,31 @@
   margin: 1rem 0;
 }
 
-.flashcard-sync { justify-content: space-between; }
-.flashcard-sync p { flex: 1 1 15rem; }
+.flashcard-sync { justify-content: flex-end; }
+.flashcard-card { position: relative; }
+.flashcard-play {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+}
 .flashcard-study { margin: 1rem 0 2rem; }
 .flashcard-face {
   display: flex;
+  width: 100%;
+  font: inherit;
+  color: var(--text-main);
+  cursor: pointer;
   flex-direction: column;
   justify-content: center;
   min-height: 17rem;
-  padding: clamp(1rem, 4vw, 2.5rem);
+  padding: 4rem clamp(1rem, 4vw, 2.5rem) 2rem;
   border: 1px solid var(--border);
   border-radius: 18px;
   background: var(--bg-panel);
@@ -79,6 +95,7 @@
 }
 .flashcards-page button { min-height: 44px; }
 .flashcards-page button:disabled { opacity: 0.55; cursor: wait; }
+.flashcards-page .flashcard-face:disabled { opacity: 1; cursor: default; }
 .flashcard-error { color: #ff9ca5; }
 .flashcards-page [hidden] { display: none !important; }
 

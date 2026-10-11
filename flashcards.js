@@ -9,6 +9,19 @@
   });
   const el = id => document.getElementById(id);
   const addForm = el("flashcardAdd");
+  let pronunciationAudio = null, audioVersion = 0;
+  function setStatus(text = "") {
+    el("flashcardStatus").textContent = text;
+    el("flashcardStatus").hidden = !text;
+  }
+  function stopAudio() {
+    audioVersion++;
+    pronunciationAudio?.stop();
+    el("flashcardPlay").disabled = false;
+    el("flashcardPlay").removeAttribute("aria-busy");
+    el("flashcardAudioStatus").textContent = "";
+    el("flashcardAudioStatus").hidden = true;
+  }
   let rows = [], groupedWords = [], loaded = false, currentRound = [], position = 0, flipped = false;
   let roundSignature = "", editing = null, saving = false, revision = 0;
   const fingerprint = root.SECRET_COOPERATIVE_REFRESH.fingerprint;
@@ -36,12 +49,18 @@
     loaded = true; service.load(rows);
   }
   function renderStudy() {
+    stopAudio();
     const card = currentRound[position];
+    el("flashcardFace").disabled = !card;
+    el("flashcardShuffle").disabled = !loaded;
     el("flashcardFlip").hidden = !card;
     el("flashcardNext").hidden = !card;
     el("flashcardAgain").hidden = !currentRound.length || Boolean(card);
     el("flashcardProgress").textContent = card ? `Card ${position + 1} of ${currentRound.length}` : "";
     const face = card ? deck.face(card, flipped) : null;
+    el("flashcardPlay").hidden = face?.label !== "Word" || !face.pronunciation;
+    el("flashcardPlay").disabled = !runtime.isPlaybackConfigured;
+    el("flashcardPlay").title = runtime.isPlaybackConfigured ? "Play pronunciation" : "Pronunciation playback is unavailable";
     el("flashcardSide").textContent = face?.label || "";
     el("flashcardIpa").textContent = face?.pronunciation || "";
     el("flashcardIpa").hidden = !face?.pronunciation;
@@ -164,7 +183,7 @@
       }
     }
     if (succeeded) {
-      el("flashcardStatus").textContent = "Saved. Started a new round with the current cards.";
+      setStatus();
       // Only restore focus if it was lost with the removed editor; never steal it.
       if (document.activeElement === document.body) el("flashcardManage").querySelector("summary").focus({ preventScroll: true });
     }
@@ -188,14 +207,41 @@
     },
     apply: applySnapshot, isBusy: busy, version: () => revision,
     nextDelay: () => store?.remaining() || 30000,
-    onSuccess() { el("flashcardStatus").textContent = "Up to date. Refreshes while visible and focused."; },
-    onError() { el("flashcardStatus").textContent = loaded
-      ? "Could not refresh. Using the last successful data. Press Refresh / Retry to try again."
-      : "Could not load cards. Press Refresh / Retry to try again."; }
+    onSuccess() { setStatus(); },
+    onError() { setStatus(loaded
+      ? "Could not refresh. Using the last successful data; retrying automatically while visible and focused."
+      : "Could not load cards. Retrying automatically while visible and focused."); }
   });
   el("flashcardWords").addEventListener("change", startRound);
   el("flashcardSentences").addEventListener("change", startRound);
-  el("flashcardFlip").addEventListener("click", () => { flipped = !flipped; renderStudy(); });
+  function flipCard() {
+    if (!currentRound[position]) return;
+    flipped = !flipped; renderStudy();
+  }
+  el("flashcardFlip").addEventListener("click", flipCard);
+  el("flashcardFace").addEventListener("click", flipCard);
+  el("flashcardPlay").addEventListener("click", async event => {
+    event.stopPropagation();
+    const card = currentRound[position];
+    if (!card || deck.face(card, flipped).label !== "Word" || !runtime.isPlaybackConfigured) return;
+    pronunciationAudio ||= root.SECRET_FLASHCARD_AUDIO.create({ runtime, utils: root.LOVE_LANGUAGE_SHARED.utils });
+    const version = ++audioVersion;
+    el("flashcardPlay").disabled = true;
+    el("flashcardPlay").setAttribute("aria-busy", "true");
+    el("flashcardAudioStatus").hidden = true;
+    try { await pronunciationAudio.play(card.front, card.pronunciation); }
+    catch {
+      if (version === audioVersion) {
+        el("flashcardAudioStatus").textContent = "Could not play pronunciation. Please try again.";
+        el("flashcardAudioStatus").hidden = false;
+      }
+    } finally {
+      if (version === audioVersion) {
+        el("flashcardPlay").disabled = false;
+        el("flashcardPlay").removeAttribute("aria-busy");
+      }
+    }
+  });
   el("flashcardNext").addEventListener("click", () => {
     position++; flipped = false; renderStudy();
     if (position >= currentRound.length) el("flashcardAgain").focus({ preventScroll: true });
@@ -204,10 +250,7 @@
     startRound();
     el(currentRound.length ? "flashcardFlip" : "flashcardWords").focus({ preventScroll: true });
   });
-  el("flashcardRetry").addEventListener("click", () => {
-    if (busy()) { el("flashcardStatus").textContent = "Save, cancel, or clear your draft before refreshing."; return; }
-    store?.invalidate(); void sync.request();
-  });
+  el("flashcardShuffle").addEventListener("click", startRound);
   el("flashcardClear").addEventListener("click", () => { addForm.reset(); addForm.querySelector(".flashcard-error").textContent = ""; revision++; });
   addForm.addEventListener("submit", event => {
     event.preventDefault();
@@ -215,11 +258,11 @@
     void mutate(() => service.add(el("flashcardSentence").value, el("flashcardTranslation").value),
       addForm, addForm.querySelector(".flashcard-error"));
   });
-  root.addEventListener("beforeunload", () => sync.stop());
+  root.addEventListener("beforeunload", () => { sync.stop(); pronunciationAudio?.dispose(); });
   const cached = store?.peek();
   if (cached !== null && cached !== undefined) {
     applySnapshot(cached); sync.seed(cached);
-    el("flashcardStatus").textContent = store.fresh() ? "Using recently verified cards." : "Showing cached cards; refreshing…";
+    setStatus();
   } else { renderStudy(); renderManagement(); updateControls(); }
   if (!store?.fresh()) void sync.request();
 })(window);

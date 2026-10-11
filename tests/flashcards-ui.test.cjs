@@ -24,6 +24,7 @@ class Element {
   }
   contains(node) { return this === node || this.children.some(child => child.contains(node)); }
   setAttribute(name, value) { this[name] = value; }
+  removeAttribute(name) { delete this[name]; }
   addEventListener(type, callback) { this.listeners[type] = callback; }
   focus() { this.doc.activeElement = this; }
   setSelectionRange(start, end, direction) { this.selectionStart = start; this.selectionEnd = end; this.selectionDirection = direction; }
@@ -41,10 +42,11 @@ class Element {
   }
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
   reset() { this.querySelectorAll('textarea').forEach(field => { field.value = ''; }); }
-  fire(type) { if (!this.disabled) this.listeners[type]?.({ preventDefault() {} }); }
+  fire(type) { if (!this.disabled) return this.listeners[type]?.({ preventDefault() {}, stopPropagation() {} }); }
 }
 async function harness(warm) {
-  let scans = 0, syncOptions, fail = false;
+  let scans = 0, syncOptions, fail = false, failAudio = false, stops = 0;
+  const played = [];
   const sentence = { rowId: '__secret_flashcard__::one', timestamp: 0, flashcardData: {
     kind: 'sentence', id: 'one', sentence: '<b>ka mi</b>', translation: 'my sun', revision: 'v1',
     author: 'alice', editor: 'alice', createdAt: 1, editedAt: 1
@@ -95,7 +97,11 @@ async function harness(warm) {
     SECRET_FLASHCARD_DECK: { ...deck, round: cards => deck.round(cards, () => 0.75) }, SECRET_FLASHCARD_SERVICE: serviceApi,
     SECRET_DICTIONARY_CACHE: { forRuntime: () => store }, scrollX: 0, scrollY: 123,
     scrollTo(x, y) { this.scrollX = x; this.scrollY = y; }, addEventListener() {},
-    LOVE_LANGUAGE_SHARED: { createAwsRuntime: () => ({ awsConfig: { heartsTableName: 'test' }, getHeartsTableClient: () => client, ensureAwsCredentials: async () => true }) },
+    SECRET_FLASHCARD_AUDIO: { create: () => ({
+      async play(word, ipa) { if (failAudio) throw new Error('audio unavailable'); played.push([word, ipa]); },
+      stop() { stops++; }, dispose() {}
+    }) },
+    LOVE_LANGUAGE_SHARED: { createAwsRuntime: () => ({ isPlaybackConfigured: true, awsConfig: { heartsTableName: 'test' }, getHeartsTableClient: () => client, ensureAwsCredentials: async () => true }) },
     SECRET_COOPERATIVE_REFRESH: { fingerprint, start(options) {
       syncOptions = options;
       return { seed() {}, stop() {}, async request() {
@@ -109,7 +115,8 @@ async function harness(warm) {
   vm.runInNewContext(fs.readFileSync('flashcards.js', 'utf8'), context);
   await flush();
   return { nodes, doc, store, database, word, sentence, options: syncOptions,
-    scans: () => scans - initialScans, fail: value => { fail = value; } };
+    scans: () => scans - initialScans, fail: value => { fail = value; }, played, stops: () => stops,
+    failAudio: value => { failAudio = value; } };
 }
 function findButton(root, text) { const found = root.querySelectorAll('button').find(button => button.textContent === text); assert.ok(found, text); return found; }
 async function run() {
@@ -118,6 +125,21 @@ async function run() {
   assert.equal(n.flashcardText.textContent, 'ka');
   assert.equal(n.flashcardIpa.textContent, 'ka');
   assert.equal(n.flashcardProgress.textContent, 'Card 1 of 2');
+  assert.equal(n.flashcardStatus.hidden, true, 'Routine cache status is not displayed');
+  assert.equal(n.flashcardPlay.hidden, false);
+  await n.flashcardPlay.fire('click');
+  assert.deepEqual(ui.played, [['ka', 'ka']]);
+  assert.equal(n.flashcardText.textContent, 'ka', 'Playing pronunciation does not flip the card');
+  assert.equal(n.flashcardPlay.disabled, false);
+  ui.failAudio(true); await n.flashcardPlay.fire('click');
+  assert.equal(n.flashcardAudioStatus.hidden, false);
+  assert.match(n.flashcardAudioStatus.textContent, /Could not play/);
+  ui.failAudio(false);
+  n.flashcardFace.fire('click'); assert.equal(n.flashcardText.textContent, 'sun');
+  assert.equal(n.flashcardPlay.hidden, true, 'Definition side does not reveal pronunciation');
+  assert.equal(n.flashcardAudioStatus.hidden, true);
+  assert.ok(ui.stops() > 0, 'Flipping stops pronunciation');
+  n.flashcardFace.fire('click'); assert.equal(n.flashcardText.textContent, 'ka');
   n.flashcardFlip.fire('click'); assert.equal(n.flashcardText.textContent, 'sun');
   assert.equal(n.flashcardIpa.hidden, true);
   const changed = { ...ui.word, meaning: 'bright sun' };
@@ -125,9 +147,17 @@ async function run() {
   assert.equal(n.flashcardText.textContent, 'sun', 'Background refresh freezes the current round');
   assert.match(n.flashcardUpdates.textContent, /next round/);
   n.flashcardNext.fire('click'); assert.equal(n.flashcardText.textContent, '<b>ka mi</b>');
+  assert.equal(n.flashcardPlay.hidden, true, 'Sentence cards do not show word pronunciation controls');
+  const scansBeforeShuffle = ui.scans();
+  n.flashcardShuffle.fire('click');
+  assert.equal(n.flashcardProgress.textContent, 'Card 1 of 2');
+  assert.equal(n.flashcardText.textContent, 'ka', 'Shuffle restarts on the initial side');
+  assert.equal(ui.scans(), scansBeforeShuffle, 'Shuffle does not force a database read');
+  n.flashcardNext.fire('click');
   assert.equal(n.flashcardText.children.length, 0, 'Sentence markup is displayed as text');
   n.flashcardFlip.fire('click'); assert.equal(n.flashcardText.textContent, 'my sun');
   n.flashcardNext.fire('click'); assert.equal(n.flashcardAgain.hidden, false);
+  assert.equal(n.flashcardFace.disabled, true);
   assert.equal(ui.doc.activeElement, n.flashcardAgain);
   n.flashcardAgain.fire('click'); n.flashcardFlip.fire('click');
   assert.equal(n.flashcardText.textContent, 'bright sun');
@@ -138,7 +168,7 @@ async function run() {
   n.flashcardManage.open = true;
   n.flashcardSentence.value = 'draft'; n.flashcardSentence.selectionStart = 2; n.flashcardSentence.focus();
   assert.ok(ui.options.isBusy());
-  n.flashcardRetry.fire('click'); assert.match(n.flashcardStatus.textContent, /clear your draft/);
+  n.flashcardShuffle.fire('click');
   assert.equal(n.flashcardSentence.value, 'draft'); assert.equal(n.flashcardSentence.selectionStart, 2);
   n.flashcardClear.fire('click'); ui.doc.activeElement = ui.doc.body;
   assert.equal(ui.options.isBusy(), false);
@@ -174,6 +204,8 @@ async function run() {
   assert.equal(n.flashcardSentence.value, ''); assert.equal(n.flashcardTranslation.value, '');
   assert.equal(ui.database.size, 2);
   ui.options.onError(); assert.match(n.flashcardStatus.textContent, /last successful data/);
+  assert.equal(n.flashcardStatus.hidden, false, 'Read failures are still visible');
+  ui.options.onSuccess(); assert.equal(n.flashcardStatus.hidden, true);
   assert.equal(n.flashcardText.textContent, 'ka');
   assert.notEqual(ui.doc.activeElement?.disabled, true);
   const cold = await harness(false);
@@ -181,6 +213,10 @@ async function run() {
   assert.equal(cold.nodes.flashcardText.textContent, 'ka');
   const html = fs.readFileSync('flashcards.html', 'utf8');
   assert.match(html, /src="auth.js"/);
+  assert.match(html, /<button id="flashcardFace" type="button"/);
+  assert.match(html, /id="flashcardShuffle"/);
+  assert.match(html, /<\/button>\s*<button id="flashcardPlay"/, 'Play is a sibling, not a nested button');
+  assert.doesNotMatch(html, /flashcardRetry|Refresh \/ Retry/);
   assert.match(html, /type="application\/x-protected-script" data-protected-src="flashcards.js"/);
   assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
   for (const match of html.matchAll(/(?:src|href|data-protected-src)="([^"]+)"/g)) {
