@@ -35,7 +35,8 @@ assert.equal(grouping.groupWords(raw).length, 4, 'Sentence metadata is not a dic
 assert.equal(analytics.analyze([sentence], { vowels: [{ symbol: 'a' }], consonants: [] }).selected, 0);
 const round = deck.round(cards, () => 0);
 assert.deepEqual(round.map(card => card.id), ['word:mi', 'sentence:one', 'word:etos']);
-assert.ok(round.every(card => card.startsOnBack));
+assert.ok(round.filter(card => card.type === 'word').every(card => card.startsOnBack));
+assert.ok(round.filter(card => card.type === 'sentence').every(card => !card.startsOnBack));
 assert.equal(new Set(round.map(card => card.id)).size, cards.length);
 assert.notEqual(round[0], cards[1]);
 const word = { ...cards[0], startsOnBack: false };
@@ -43,7 +44,8 @@ assert.deepEqual(deck.face(word), { label: 'Word', text: 'etos', pronunciation: 
 assert.deepEqual(deck.face(word, true), { label: 'Definition', text: 'hot; fire', pronunciation: '' });
 assert.equal(deck.face({ ...word, startsOnBack: true }).label, 'Definition');
 assert.equal(deck.face({ ...word, startsOnBack: true }, true).pronunciation, 'ɛtos');
-assert.equal(deck.face({ ...cards[2], startsOnBack: true }).label, 'Translation');
+assert.equal(deck.face({ ...cards[2], startsOnBack: true }).label, 'Sentence', 'Older saved sentence cards also start in the language');
+assert.equal(deck.face({ ...cards[2], startsOnBack: true }, true).label, 'Translation');
 assert.equal(deck.face({ ...cards[2], startsOnBack: false }).label, 'Sentence');
 assert.ok(deck.round(cards, () => 0.99).every(card => !card.startsOnBack));
 assert.deepEqual(deck.round([]), []);

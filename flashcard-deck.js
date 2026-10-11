@@ -29,10 +29,10 @@
       const j = Math.floor(random() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
-    return shuffled.map(card => ({ ...card, startsOnBack: random() < 0.5 }));
+    return shuffled.map(card => ({ ...card, startsOnBack: card.type === "word" && random() < 0.5 }));
   }
   function face(card, flipped = false) {
-    const back = card.startsOnBack !== flipped;
+    const back = card.type === "sentence" ? flipped : card.startsOnBack !== flipped;
     return {
       label: card.type === "word" ? (back ? "Definition" : "Word") : (back ? "Translation" : "Sentence"),
       text: back ? card.back : card.front,
